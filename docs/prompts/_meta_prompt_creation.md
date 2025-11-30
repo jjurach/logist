@@ -19,10 +19,39 @@ instructions.
 
 Follow the instructions in AGENTS.md when committing these logist/docs changes. Read `../../AGENTS.md` for specific commit message guidelines.
 
-### Move to Completed Directory
-After completing the implementation and verification for a prompt, move the prompt file from `docs/prompts/` to `docs/prompts/completed/` before committing.
+### Move to Completed Directory and Commit
+After completing the implementation and verification for a prompt, the prompt file must be moved to the `docs/prompts/completed/` directory and committed using Git with a meaningful commit message.
 
-```bash
-cd /home/phaedrus/AiSpace/logist
-mv docs/prompts/00-task_name.md docs/prompts/completed/
-```
+**Steps:**
+1.  **Move the prompt file:** Move the *original* prompt file (e.g., `docs/prompts/00-task_name.md` or `docs/prompts/XX-task_name.md` where XX is the phase number) to the `docs/prompts/completed/` directory.
+    ```bash
+    cd /home/phaedrus/AiSpace/logist
+    mv docs/prompts/XX-task_name.md docs/prompts/completed/XX-task_name.md
+    ```
+2.  **Stage changes:** Add the moved file and any other modified files to the Git staging area.
+    ```bash
+    cd /home/phaedrus/AiSpace/logist
+    git add .
+    ```
+3.  **Commit changes:** Create a meaningful commit message following the guidelines in `AGENTS.md`. The commit message should clearly describe the completion of the prompt and the move of the file.
+    ```bash
+    # Example commit message:
+    # feat: complete 00-task_name prompt documentation
+
+    # - Updated the 00-task_name prompt with implementation guidance and testing details.
+    # - Moved 00-task_name.md to docs/prompts/completed/.
+    ```
+    To ensure reliable commits, especially with special characters, use the temporary file method:
+    ```bash
+    COMMIT_MSG_FILE=".git_commit_message-$$"
+    git_commit_message=$(cat <<EOF
+    feat: complete XX-task_name prompt documentation
+
+    - Updated the XX-task_name prompt with implementation guidance and testing details.
+    - Moved XX-task_name.md to docs/prompts/completed/.
+    EOF
+    )
+    echo "$git_commit_message" > "$COMMIT_MSG_FILE"
+    git commit -F "$COMMIT_MSG_FILE"
+    rm "$COMMIT_MSG_FILE"
+    ```
