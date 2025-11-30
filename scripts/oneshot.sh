@@ -27,23 +27,13 @@ PROMPT_BASENAME=$(basename "$PROMPT_FILE")
 META_PROMPT_FILE="$scriptdir/../docs/prompts/_meta_prompt_instructions.md"
 if [[ ! -f "$META_PROMPT_FILE" ]]; then
     echo "Warning: Meta-prompt file '$META_PROMPT_FILE' not found"
-    META_PROMPT_CONTENT=""
+    FILE_ARGS="--file $PROMPT_FILE"
 else
-    META_PROMPT_CONTENT=$(cat "$META_PROMPT_FILE")
+    FILE_ARGS="--file $META_PROMPT_FILE $PROMPT_FILE"
 fi
-
-# Read the prompt content
-PROMPT_CONTENT=$(cat "$PROMPT_FILE")
 
 echo "Executing Cline oneshot: $PROMPT_BASENAME"
 echo "=================================================="
 
-# Combine meta-prompt and prompt content with clear file source indicator
-COMBINED_CONTENT="[META-PROMPT: $META_PROMPT_FILE]
-${META_PROMPT_CONTENT}
-
-[PROMPT FILE: $PROMPT_FILE]
-${PROMPT_CONTENT}"
-
-# Execute the oneshot command with combined content
-echo "$COMBINED_CONTENT" | exec cline --yolo --oneshot "Execute the instructions. Meta-prompt provides common procedures, prompt file contains the specific task." 2>&1 | tee -a $scriptdir/oneshot.out
+# Execute the oneshot command with attached files
+exec cline --yolo --oneshot $FILE_ARGS "Execute the instructions. Meta-prompt provides common procedures, prompt file contains the specific task." 2>&1 | tee -a $scriptdir/oneshot.out
