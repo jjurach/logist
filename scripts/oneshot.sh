@@ -1,8 +1,9 @@
 #!/bin/bash
+scriptdir=$(cd $(dirname $0); pwd -P)
 
 # Oneshot execution script for Cline
 # Usage: scripts/oneshot.sh <prompt_file>
-# Executes: cline --oneshot -t "$(cat $prompt_file)"
+# Executes: cline --yolo --oneshot "Execute instructions from $prompt_file"
 
 set -euo pipefail
 
@@ -26,4 +27,4 @@ echo "Executing Cline oneshot with prompt from: $PROMPT_FILE"
 echo "=================================================="
 
 # Execute the oneshot command
-exec cline --oneshot -t "$PROMPT_CONTENT"
+exec cline --yolo --oneshot "execute instructions from $PROMPT_FILE" 2>&1 | tee -a $scriptdir/oneshot.out
