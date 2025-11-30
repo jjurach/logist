@@ -1,5 +1,7 @@
 # 00-13-job_rerun_command.md
 
+Some of this prompt may have already been implemented.  Please consider that before adding more details to the target prompt file.
+
 ## Task
 Implement the `logist job rerun <job_id> [--step <step_number>]` command. This command should allow users to re-execute a previously completed job, or resume a job from a specific step. If `--step` is not provided, the job should rerun from the beginning.
 

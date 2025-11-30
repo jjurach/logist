@@ -67,10 +67,10 @@ source venv/bin/activate && chmod +x test-demo.sh && ./test-demo.sh
 - Re-run demo script until all units pass
 
 ### 3. Move to Completed Directory
-Move this file from `docs/prompts/` to `docs/completed/` and prepare for commit:
+Move this file from `docs/prompts/` to `docs/prompts/completed/` and prepare for commit:
 ```bash
 cd /home/phaedrus/AiSpace/logist
-mv docs/prompts/XX-task_name.md docs/completed/
+mv docs/prompts/XX-task_name.md docs/prompts/completed/
 ```
 
 ### 4. Stage and Commit Changes
