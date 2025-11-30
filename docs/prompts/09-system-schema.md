@@ -120,3 +120,5 @@ For early development and testing of `system.md` and the parsing logic:
 4.  **Confirm Metrics**: Verify that `metadata.json` contains reasonable values for token usage, cost, and duration.
 
 This structured approach ensures that the LLM consistently produces valid, schema-compliant outputs and that Logist can reliably parse these outputs and track essential metrics.
+
+Once complete with implementing the feature, update any files in docs which may be affected with decisions made here.
