@@ -4,24 +4,24 @@
 You are implementing the `job_step_command` from the Logist master development plan (Phase 3.7). This is the **core execution primitive** that runs single workflow steps using LLM agents, manages state machine transitions, and updates job state. The `logist job step` command is the fundamental execution mechanism that advances jobs through their workflow lifecycle.
 
 ## Master Plan Requirements
-**Description:** Execute single workflow step with state transition in isolated workspace
-**Objective:** Execute single workflow step with state transition in isolated workspace
-**Scope:** Chdir to workspace, state machine transitions, agent role execution, --dry-run mode
-**Dependencies:** Workspace isolation (Phase 3.6) must work
-**Files (Read):** `job_manifest.json`, role configs, `$JOB_DIR/workspace/` directory
-**Files (Write):** Updates `job_manifest.json`, writes to workspace, Git commits
-**Verification:** Advances job state (PENDING→RUNNING→REVIEW_REQUIRED) and commits workspace changes
-**Dependency Metadata:** Core execution engine for job_run_command, job_preview_command, job_poststep_command
+**Description:** Execute single workflow step with state transition in isolated workspace.
+**Objective:** Execute single workflow step with state transition in isolated workspace.
+**Scope:** Chdir to workspace, state machine transitions, agent role execution, LLM invocation, `--dry-run` mode, job history recording.
+**Dependencies:** Workspace isolation (Phase 3.6) must work. Uses `job_context.py`, `job_processor.py`, `job_state.py`, `workspace_utils.py`, `job_history.py`.
+**Files (Read):** `job_manifest.json`, role configs, `$JOB_DIR/workspace/` directory.
+**Files (Write):** Updates `job_manifest.json`, writes to workspace, Git commits, `jobHistory.json`.
+**Verification:** Advances job state (PENDING→RUNNING→REVIEW_REQUIRED) and commits workspace changes; records interaction in `jobHistory.json`.
+**Dependency Metadata:** Core execution engine for `job_run_command`, `job_preview_command`, `job_poststep_command`.
 
 ## Implementation Sequence
-1. **Analyze:** Understand state machine, agent selection logic, and LLM execution requirements
-2. **Design:** Plan agent selection, context assembly, LLM integration, and state management
-3. **Build:** Implement CLI command, agent execution pipeline, response processing, and state updates
-4. **Integrate:** Connect workspace isolation, Git operations, and file management
-5. **Test:** Verify state transitions, LLM responses, error handling, and workspace operations
-6. **Document:** Update documentation and demo script integration
-7. **Verify:** Ensure state machine correctness and integration with dependent commands
-8. **Commit:** Follow the Git Status and Commit protocol in `_meta_prompt_instructions.md`
+1.  **Analyze:** Understand state machine, agent selection logic, LLM execution requirements, and job history recording, leveraging `job_state.py`, `job_context.py`, and `job_history.py`.
+2.  **Design:** Plan agent selection, context assembly, LLM integration, state management, and history recording, ensuring code reuse from `job_context.py`, `job_processor.py`, etc.
+3.  **Build:** Implement CLI command, agent execution pipeline, response processing, state updates, and history recording using the identified reusable functions.
+4.  **Integrate:** Connect workspace isolation (`workspace_utils.py`), Git operations (`workspace_utils.perform_git_commit`), file management, and `job_history.record_interaction`.
+5.  **Test:** Verify state transitions, LLM responses, error handling, workspace operations, and history recording, including `--dry-run` mode.
+6.  **Document:** Update documentation and demo script integration, referencing the underlying utility functions.
+7.  **Verify:** Ensure state machine correctness and integration with dependent commands.
+8.  **Commit:** Follow the Git Status and Commit protocol in `_meta_prompt_instructions.md`.
 
 ## Core Implementation Details
 
@@ -31,251 +31,112 @@ logist job step [JOB_ID] [--dry-run] [--model MODEL]
 ```
 
 **Key Parameters:**
-- `JOB_ID`: Optional job identifier (uses current if unspecified)
-- `--dry-run`: Skip LLM execution and show what would be done
-- `--model`: Override default model selection for agents
+-   `JOB_ID`: Optional job identifier (uses current if unspecified).
+-   `--dry-run`: Skip LLM execution and state changes, show what would be done.
+-   `--model`: Override default model selection for agents.
 
 ### 2. Agent Selection Logic
-The command must determine which agent to execute based on current job state:
-
-**State → Agent Mapping:**
-- `PENDING/RUNNING/SUCCESS` (but PENDING always transitions to RUNNING): **Worker** agent
-- `REVIEW_REQUIRED/REVIEWING`: **Supervisor** agent for quality assessment
-
-**Agent Configuration:**
-- Load role config JSON from `$JOBS_DIR/worker.json` or `$JOBS_DIR/supervisor.json`
-- Extract `instructions`, `model` (with override support), and `name`
-- Handle missing role configurations with clear error messages
+-   The command will use `job_state.get_current_state_and_role` to determine which agent (Worker or Supervisor) to execute based on the current job state, adhering to the state machine defined in `04_state_machine.md`.
+-   Agent configuration (instructions, model) will be loaded from role manifests.
 
 ### 3. Workspace Integration
 **Prerequisite Verification:**
-- Ensure `isolation_env_setup` has created `$JOB_DIR/workspace/` directory
-- Verify workspace contains valid Git clone (`.git` directory exists)
-- Change working directory to workspace for all operations
+-   Ensure `isolation_env_setup` has created `$JOB_DIR/workspace/` directory.
+-   Verify workspace contains valid Git clone (`.git` directory exists) using `workspace_utils` functions.
+-   Change working directory to workspace for all operations.
 
 **Workspace Context:**
-- Include `.gitignore` patterns (if any)
-- Scan workspace files for context assembly
-- Track evidence files created/modified during step execution
+-   Include `.gitignore` patterns (if any).
+-   Scan workspace files for context assembly using `workspace_utils.get_workspace_files_summary`.
+-   Track evidence files created/modified during step execution.
 
 ### 4. LLM Execution Pipeline
 
 #### Context Assembly
-Build comprehensive prompt from multiple sources:
-
-**Required Attachments:**
-- **Job Manifest:** Current `job_manifest.json` with status, history, metrics
-- **Role Configuration:** Complete role JSON (instructions, model, capabilities)
-- **Workspace Context:** File listings, recent commits, current working state
-- **Phase Specifications:** From job manifest's `phases` array for current phase
-
-**Context Sources:**
-```python
-# Example context structure
-{
-    "job_manifest": {...},  # Current state
-    "role_config": {...},   # Worker or Supervisor instructions
-    "workspace_files": [...], # Files in workspace directory
-    "current_phase": {...},   # Phase specification from manifest
-    "job_history": [...]     # Previous completed phases
-}
-```
+-   The `job_context.assemble_job_context` function will be used to build a comprehensive prompt from multiple sources:
+    -   **Job Manifest:** Current `job_manifest.json` with status, history, metrics (`job_state.load_job_manifest`).
+    -   **Role Configuration:** Complete role JSON (instructions, model, capabilities).
+    -   **Workspace Context:** File listings, recent commits, current working state (`workspace_utils.get_workspace_files_summary`, `workspace_utils.get_workspace_git_status`).
+    -   **Phase Specifications:** From job manifest's `phases` array for current phase.
 
 #### CLINE Integration
-Execute LLM with proper file attachments and command structure:
-
-**Command Construction:**
-```bash
-cline --yolo --oneshot \
-  --file AGENTS.md \
-  --file _meta_prompt_instructions.md \
-  --file job_manifest.json \
-  --file role_config.json \
-  --file workspace_context.txt \
-  "Execute job step: [phase_description]"
-```
-
-**Timeout and Monitoring:**
-- 5-minute default timeout (configurable)
-- Capture stdout/stderr for logging
-- Monitor for premature termination
+-   Execute LLM using a `cline` call, passing the formatted prompt (from `job_context.format_llm_prompt`) and required file attachments.
+-   Implement timeout and monitoring mechanisms.
 
 ### 5. LLM Response Processing
-
-#### Response Schema Compliance
-LLM responses must follow `logist/schemas/llm-chat-schema.json`:
-
-**Required Response Fields:**
-```json
-{
-  "action": "COMPLETED" | "STUCK" | "RETRY",
-  "evidence_files": ["path/to/file1", "path/to/file2"],
-  "summary_for_supervisor": "Brief assessment of work done",
-  "job_manifest_url": "file:///path/to/manifest" // optional
-}
-```
-
-**Action Semantics:**
-- **COMPLETED:** Phase work finished, review evaluation needed
-- **STUCK:** Agent cannot progress, human intervention required
-- **RETRY:** Try again (e.g., fix code errors, gather more context)
-
-#### Response Validation
-- JSON schema validation against `llm-chat-schema.json`
-- Action validation (must be COMPLETED/STUCK/RETRY)
-- Evidence file existence verification
-- Summary length limits (max 1000 chars)
+-   The `job_processor.process_llm_response` function will be used to handle LLM responses.
+-   This function will perform:
+    -   JSON schema validation against `logist/schemas/llm-chat-schema.json`.
+    -   Validation of `action` semantics (`COMPLETED`/`STUCK`/`RETRY`).
+    -   Evidence file existence verification.
+    -   Summary length limits.
 
 ### 6. State Machine Transitions
-
-#### Worker Agent Flow (PENDING→RUNNING→REVIEW_REQUIRED)
-```
-PENDING → RUNNING (immediately, trigger Worker execution)
-RUNNING → REVIEW_REQUIRED (after Worker COMPLETED/STUCK/RETRY)
-```
-
-#### Supervisor Agent Flow (REVIEW_REQUIRED→REVIEWING→APPROVAL_REQUIRED/INTERVENTION_REQUIRED)
-```
-REVIEW_REQUIRED → REVIEWING (immediately, trigger Supervisor execution)
-REVIEWING → APPROVAL_REQUIRED (Supervisor COMPLETED - approves Worker's work)
-REVIEWING → INTERVENTION_REQUIRED (Supervisor STUCK/RETRY - needs human help)
-```
-
-**Error State Handling:**
-- LLM timeout: Return to previous state, log error
-- Invalid response: INTERVENTION_REQUIRED with descriptive error
-- Git operation failures: INTERVENTION_REQUIRED for manual cleanup
+-   `job_state.transition_state` will be used to manage state machine transitions based on the LLM response's `action` and the current role, adhering to the logic defined in `04_state_machine.md`.
+    -   Worker Agent Flow: PENDING→RUNNING→REVIEW_REQUIRED
+    -   Supervisor Agent Flow: REVIEW_REQUIRED→REVIEWING→APPROVAL_REQUIRED/INTERVENTION_REQUIRED
+-   Error State Handling: For LLM timeouts, invalid responses, or Git operation failures, transition to `INTERVENTION_REQUIRED` or retry states as defined by the state machine.
 
 ### 7. Job Manifest Updates
-
-#### State Updates
-```json
-{
-  "status": "REVIEW_REQUIRED",  // New state based on agent+response
-  "current_phase": "implementation",  // May advance based on phase completion
-  "metrics": {
-    "cumulative_cost": 120,  // Add LLM call cost
-    "cumulative_time_seconds": 900  // Add execution time
-  },
-  "history": [
-    {
-      "phase": "requirements_analysis",
-      "status": "COMPLETED",
-      "timestamp": "2025-11-29T23:00:00Z",
-      "evidence_files": ["requirements.md"],
-      "summary": "Completed analysis with specification document",
-      "llm_model": "gpt-4-turbo",
-      "cost": 15
-    }
-  ]
-}
-```
-
-#### History Record Structure
-Append new history entry for each step:
-- Phase name
-- Execution status (COMPLETED/STUCK/RETRY)
-- Timestamp
-- Evidence files list (from LLM response)
-- Summary for supervisor (from LLM response)
-- LLM model used
-- Cost incurred
-- Execution time
+-   `job_state.update_job_manifest` will be used to update the `job_manifest.json` with:
+    -   New `status` based on agent+response.
+    -   Potentially advanced `current_phase`.
+    -   Updated `metrics` (`cumulative_cost`, `cumulative_time_seconds`).
+    -   A new `history` entry for the completed step.
 
 ### 8. Git Operations
+-   `workspace_utils.perform_git_commit` will be used to:
+    -   Stage all `evidence_files` from the LLM response.
+    -   Stage any additional workspace changes.
+    -   Create a commit with a descriptive message.
+-   Handle Git failures gracefully.
 
-#### Post-Execution Commits
-- Stage all evidence files from LLM response
-- Stage any additional workspace changes
-- Create commit with descriptive message:
-```bash
-git add [evidence_files...]
-git commit -m "feat: complete [phase_name] phase
+### 9. Job History Integration
+-   After each successful LLM interaction and post-processing (and if not in `--dry-run` mode), `job_history.record_interaction` will be used to append a new entry to the `jobHistory.json` file.
+-   This entry will capture the full request (prompt, `files_context`, `metadata`) and the complete LLM response (`action`, `evidence_files`, `summary_for_supervisor`, `raw_response`), providing a comprehensive audit trail.
 
-- [LLM summary_for_supervisor]
-- Files: [evidence_files]
-- Model: [llm_model] ($[cost])"
-```
+### 10. Error Handling and Recovery
+-   Leverage a centralized error handling system (as outlined in `prompts/19-error_handling_system.md`) for robust reporting and recovery.
+-   **Dry Run Mode:**
+    -   When `--dry-run` is specified, the command will assemble the full context and simulate the LLM call and post-processing without making any actual LLM calls, state changes, manifest updates, Git operations, or history recordings.
+    -   It will display the assembled prompt, the simulated LLM response (if a mock is used), and the intended state changes.
 
-**Git Failure Handling:**
-- If repository is dirty: Commit anyway or INTERVENTION_REQUIRED
-- If evidence files don't exist: Log warning but continue
-- Git command failures: Do not block, log for manual cleanup
+### 11. Integration Points
+-   **Dependent Commands:** `job_step_command` is prerequisite for `job_run_command`, `job_preview_command`, `job_poststep_command`.
+-   **Shared Logic:** Leverages `job_context.py`, `job_processor.py`, `job_state.py`, `workspace_utils.py`, `job_history.py`.
 
-### 9. Error Handling and Recovery
-
-#### Execution Failures
-- **LLM Timeout:** Return to previous state, log timeout
-- **Invalid JSON:** INTERVENTION_REQUIRED, preserve partial results
-- **Missing Evidence Files:** Log warnings, continue with available files
-- **Workspace Issues:** Verify isolation_setup ran, recreate if corrupted
-
-#### Dry Run Mode
-- Show complete context assembly without LLM execution
-- Display assembled prompt for inspection
-- No state changes or file modifications
-- Return success/failure based on context preparation only
-
-### 10. Integration Points
-
-#### Dependent Commands
-`job_step_command` is prerequisite for:
-- **job_run_command:** Uses internal calls to job_step in loop
-- **job_preview_command:** Shows what job_step would execute
-- **job_poststep_command:** Processes simulated responses like job_step results
-
-#### File Management
-- Read: `job_manifest.json`, role configs from `$JOBS_DIR/*.json`
-- Write: Updated `job_manifest.json`, evidence files in workspace
-- Execute: All operations in workspace directory via shell commands
-
-### 11. Testing and Validation
-
-#### Unit Testing
-- Mock LLM responses with schema-compliant JSON
-- Test state transitions with various combinations
-- Verify context assembly correctness
-- Mock Git operations for commit testing
-
-#### Integration Testing
-- End-to-end execution with real LLM calls (expensive, use sparingly)
-- Test against real workspace created by isolation_env_setup
-- Verify proper file attachments and context inclusion
-- Validate state persistence and data integrity
-
-#### Demo Script Integration
-- Add job_step execution after workspace creation
-- Verify state progression: PENDING → RUNNING → REVIEW_REQUIRED
-- Test with both Worker and Supervisor roles
-- Demonstrate evidence file collection and commits
+### 12. Testing and Validation
+-   Unit Testing: Mock LLM responses; test state transitions; verify context assembly; mock Git/history operations.
+-   Integration Testing: End-to-end execution (sparingly); test against real workspace; verify file attachments, state persistence, data integrity, and history recording.
 
 ## Verification Standards
-- ✅ Advances job through one state transition per execution
-- ✅ Executes appropriate agent (Worker vs Supervisor) based on state
-- ✅ Processes LLM responses and updates manifest correctly
-- ✅ Commits evidence files and workspace changes to Git
-- ✅ Handles failures gracefully with proper error states
-- ✅ Works with --dry-run mode for testing
-- ✅ Demonstrates proper workspace isolation
-- ✅ Tests pass with comprehensive mocking
-- ✅ Backward compatibility maintained
+-   ✅ Advances job through one state transition per execution.
+-   ✅ Executes appropriate agent (Worker vs Supervisor) based on state.
+-   ✅ Processes LLM responses and updates manifest correctly via `job_processor.process_llm_response` and `job_state.update_job_manifest`.
+-   ✅ Commits evidence files and workspace changes to Git via `workspace_utils.perform_git_commit`.
+-   ✅ Records LLM interaction in `jobHistory.json` via `job_history.record_interaction`.
+-   ✅ Handles failures gracefully with proper error states.
+-   ✅ Works with `--dry-run` mode for testing.
+-   ✅ Demonstrates proper workspace isolation.
+-   ✅ Tests pass with comprehensive mocking.
 
 ## Dependencies Check
-- **Master Plan:** Phase 3.7 job_step_command requires workspace isolation (Phase 3.6)
-- **Prerequisites:** Functional CLI, job creation, workspace setup, Git available
-- **Integration:** Core dependency for execution workflow (job_run, job_preview, job_poststep)
-- **Agent Configs:** Worker and Supervisor role definitions in `$JOBS_DIR/`
+-   **Master Plan:** Phase 3.7 `job_step_command` requires `isolation_env_setup` (Phase 3.6).
+-   **Prerequisites:** Functional CLI, job creation, workspace setup, Git available.
+-   **Integration:** Core dependency for execution workflow; relies on new utility modules.
+-   **Agent Configs:** Worker and Supervisor role definitions.
 
 ## Critical Success Factors
 
-**The job_step_command is the most complex and critical component** - it represents the actual AI agent execution and state management. Success requires:
+The `job_step_command` is the most complex and critical component, representing the actual AI agent execution and state management. Success requires:
 
-1. **Reliable LLM Integration:** Robust CLINE calls with proper file handling
-2. **Deterministic State Management:** Correct transitions per state machine
-3. **Evidence Tracking:** Accurate file collection and commitment
-4. **Error Resilience:** Graceful handling of timeouts, invalid responses, git failures
-5. **Context Quality:** Comprehensive prompt assembly for high-quality LLM responses
+1.  **Reliable LLM Integration:** Robust CLINE calls with proper file handling.
+2.  **Deterministic State Management:** Correct transitions per state machine, using `job_state.transition_state`.
+3.  **Evidence Tracking:** Accurate file collection and commitment, using `workspace_utils.perform_git_commit`.
+4.  **Error Resilience:** Graceful handling of timeouts, invalid responses, Git failures.
+5.  **Context Quality:** Comprehensive prompt assembly for high-quality LLM responses, using `job_context.assemble_job_context`.
+6.  **History Auditing:** Consistent and complete recording of all interactions in `jobHistory.json` via `job_history.record_interaction`.
 
 Get this foundation right and the rest of the system will work. Fail here and the entire job execution pipeline collapses.
 
-Implement systematically, referencing this comprehensive specification throughout development to ensure rock-solid workflow execution.
+Implement systematically, referencing this comprehensive specification throughout development to ensure rock-solid workflow execution, and leveraging the new utility modules for modularity and reuse.
