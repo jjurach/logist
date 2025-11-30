@@ -23,11 +23,21 @@ fi
 # Get the base filename for clear display
 PROMPT_BASENAME=$(basename "$PROMPT_FILE")
 
+# Get project root path for AGENTS.md
+PROJECT_ROOT=$(cd "$scriptdir/../.."; pwd -P)
+AGENTS_MD="$PROJECT_ROOT/AGENTS.md"
+
 # Verify meta-prompt file exists
 META_PROMPT_FILE="$scriptdir/../docs/prompts/_meta_prompt_instructions.md"
 if [[ ! -f "$META_PROMPT_FILE" ]]; then
     echo "Warning: Meta-prompt file '$META_PROMPT_FILE' not found"
-    FILE_ARGS="--file $PROMPT_FILE"
+    if [[ -f "$AGENTS_MD" ]]; then
+        FILE_ARGS="--file $AGENTS_MD --file $PROMPT_FILE"
+    else
+        FILE_ARGS="--file $PROMPT_FILE"
+    fi
+elif [[ -f "$AGENTS_MD" ]]; then
+    FILE_ARGS="--file $AGENTS_MD --file $META_PROMPT_FILE --file $PROMPT_FILE"
 else
     FILE_ARGS="--file $META_PROMPT_FILE --file $PROMPT_FILE"
 fi

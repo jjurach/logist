@@ -45,6 +45,27 @@ Update this prompt file to reflect completed deliverables and any deviations:
 - Note any prerequisites that proved incomplete or incorrect
 - Document the completion date at the bottom of the file
 
+### Testing and Validation
+After completing implementation, validate with the demo script:
+```bash
+cd /home/phaedrus/AiSpace/logist
+source venv/bin/activate && chmod +x test-demo.sh && ./test-demo.sh
+```
+
+**Expected Output:**
+- ✅ Virtual environment activated
+- ✅ Jobs directory created successfully
+- ✅ Job created successfully
+- ✅ Job status command executed
+- ✅ Job selected successfully
+- 🎉 All implemented units passed!
+
+**If demo script fails:**
+- Check venv activation (run `which python3` after activation)
+- Verify package installation (`pip list | grep click`)
+- Debug specific failing unit and fix implementation
+- Re-run demo script until all units pass
+
 ### 3. Move to Completed Directory
 Move this file from `docs/prompts/` to `docs/completed/` and prepare for commit:
 ```bash
