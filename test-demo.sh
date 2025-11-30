@@ -5,7 +5,7 @@
 set -e  # Exit on any error
 
 DEMO_DIR="/tmp/logist-demo-$$"
-export PURSER_JOBS_DIR="$DEMO_DIR/jobs"
+export LOGIST_JOBS_DIR="$DEMO_DIR/jobs"
 
 cleanup() { rm -rf "$DEMO_DIR"; }
 trap cleanup EXIT

@@ -18,7 +18,7 @@ The demo script serves as both implementation validation and feature showcase:
 set -e  # Exit on any error
 
 DEMO_DIR="/tmp/logist-demo-$$"
-export PURSER_JOBS_DIR="$DEMO_DIR/jobs"
+export LOGIST_JOBS_DIR="$DEMO_DIR/jobs"
 
 cleanup() { rm -rf "$DEMO_DIR"; }
 trap cleanup EXIT
@@ -124,7 +124,7 @@ run_regression_tests() {
     echo "🧪 Running regression tests with historical fixtures"
 
     # Use all historical jobHistory entries as test cases
-    for job_dir in "$PURSER_JOBS_DIR"/*/ ; do
+    for job_dir in "$LOGIST_JOBS_DIR"/*/ ; do
         [ -f "$job_dir/jobHistory.json" ] || continue
         test_job_history_fixtures "$job_dir"
     done
@@ -156,11 +156,11 @@ assert_job_status() {
 assert_workspace_directory() {
     local job_id=$1
 
-    if [[ ! -d "$PURSER_JOBS_DIR/$job_id/workspace" ]]; then
+    if [[ ! -d "$LOGIST_JOBS_DIR/$job_id/workspace" ]]; then
         echo "❌ Workspace directory missing for job: $job_id"
         exit 1
     fi
-    if [[ ! -d "$PURSER_JOBS_DIR/$job_id/workspace/.git" ]]; then
+    if [[ ! -d "$LOGIST_JOBS_DIR/$job_id/workspace/.git" ]]; then
         echo "❌ Git repository not initialized in workspace for job: $job_id"
         exit 1
     fi
@@ -174,7 +174,7 @@ assert_job_history_contains() {
     local job_id=$1
     local expected_count=$2
 
-    local history_file="$PURSER_JOBS_DIR/$job_id/jobHistory.json"
+    local history_file="$LOGIST_JOBS_DIR/$job_id/jobHistory.json"
     if [[ ! -f "$history_file" ]]; then
         echo "❌ Job history missing for: $job_id"
         exit 1

@@ -10,15 +10,15 @@ These options can be used with the main `logist` command and affect all subcomma
 Specifies the root directory where the `jobs_index.json` file and all individual job subdirectories are stored. This allows for flexible project organization and development environments.
 
 -   **Default**: `~/.logist/jobs`
--   **Environment Variable**: `PURSER_JOBS_DIR` can be set to override the default
+-   **Environment Variable**: `LOGIST_JOBS_DIR` can be set to override the default
 -   **Development**: For development, you can use a local directory, e.g., `logist --jobs-dir ./jobs job list`.
 
 ### Environment Variables
 
-**PURSER_JOBS_DIR**
+**LOGIST_JOBS_DIR**
 : Override the default jobs directory (`~/.logist/jobs`).
 
-**PURSER_JOB_ID**
+**LOGIST_JOB_ID**
 : Specify the currently selected job ID when no job ID argument is provided. Takes precedence over the job selected in the jobs index.
 
 ---

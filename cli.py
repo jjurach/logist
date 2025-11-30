@@ -17,7 +17,7 @@ class PlaceholderLogistEngine:
 
     def run_job(self, job_id: str, model: str = "gpt-4", resume: bool = False) -> bool:
         """Simulate running a job continuously."""
-        print(f"🔄 [PURSER] Running job '{job_id}' continuously with model '{model}'")
+        print(f"🔄 [LOGIST] Running job '{job_id}' continuously with model '{model}'")
         print("   → Would: Execute Worker → Supervisor → Steward loop until completion")
         return False
 
@@ -28,13 +28,13 @@ class PlaceholderLogistEngine:
             print(f"   → Would: Simulate single phase for job '{job_id}' with mock data")
             return True
 
-        print(f"👣 [PURSER] Executing single phase for job '{job_id}'")
+        print(f"👣 [LOGIST] Executing single phase for job '{job_id}'")
         print("   → Would: Run Worker agent, then Supervisor, then pause for Steward")
         return True
 
     def preview_job(self, job_id: str) -> None:
         """Simulate previewing the next step of a job."""
-        print(f"🔍 [PURSER] Previewing next step for job '{job_id}'")
+        print(f"🔍 [LOGIST] Previewing next step for job '{job_id}'")
         print("   → Would: Assemble the complete prompt and display it")
         print("\n--- BEGIN MOCK PROMPT ---")
         print(f"You are the Worker agent. The current task for job '{job_id}' is...")
@@ -42,12 +42,12 @@ class PlaceholderLogistEngine:
 
     def reset_job(self, job_id: str) -> None:
         """Simulate resetting a job."""
-        print(f"🔄 [PURSER] Resetting job '{job_id}' to initial state")
+        print(f"🔄 [LOGIST] Resetting job '{job_id}' to initial state")
         print("   → Would: Delete evidence files and clear execution history")
 
     def revert_job(self, job_id: str) -> None:
         """Simulate reverting job to checkpoint."""
-        print(f"⏮️ [PURSER] Reverting job '{job_id}' to previous checkpoint")
+        print(f"⏮️ [LOGIST] Reverting job '{job_id}' to previous checkpoint")
         print("   → Would: Restore Job Manifest to its previous state")
 
 
@@ -207,12 +207,12 @@ class PlaceholderJobManager:
 
     def get_job_history(self, job_id: str) -> list:
         """Simulate retrieving job history."""
-        print(f"📚 [PURSER] Retrieving history for job '{job_id}'")
+        print(f"📚 [LOGIST] Retrieving history for job '{job_id}'")
         return ["1. Worker: Implemented feature X"]
 
     def inspect_job(self, job_id: str) -> dict:
         """Simulate inspecting a raw job manifest."""
-        print(f"🔩 [PURSER] Inspecting raw manifest for job '{job_id}'")
+        print(f"🔩 [LOGIST] Inspecting raw manifest for job '{job_id}'")
         return {"job_id": job_id, "raw_data": "..."}
 
     def list_jobs(self, jobs_dir: str) -> list:
@@ -268,11 +268,11 @@ class PlaceholderJobManager:
 
     def force_success(self, job_id: str) -> None:
         """Simulate forcing a task to success."""
-        print(f"✅ [PURSER] Forcing task success for job '{job_id}'")
+        print(f"✅ [LOGIST] Forcing task success for job '{job_id}'")
 
     def terminate_job(self, job_id: str) -> None:
         """Simulate terminating a job."""
-        print(f"🛑 [PURSER] Terminating job '{job_id}' workflow")
+        print(f"🛑 [LOGIST] Terminating job '{job_id}' workflow")
 
 
 class PlaceholderRoleManager:
@@ -280,12 +280,12 @@ class PlaceholderRoleManager:
 
     def list_roles(self) -> list:
         """Simulate listing available roles."""
-        print("👥 [PURSER] Listing all available roles")
+        print("👥 [LOGIST] Listing all available roles")
         return [{"name": "Worker", "description": "The primary agent."}]
 
     def inspect_role(self, role_name: str) -> dict:
         """Simulate inspecting a specific role."""
-        print(f"👤 [PURSER] Inspecting role '{role_name}'")
+        print(f"👤 [LOGIST] Inspecting role '{role_name}'")
         return {"name": role_name, "description": "..."}
 
 
@@ -333,10 +333,10 @@ def get_job_id(ctx, job_id_arg: str | None) -> str | None:
     if job_id_arg:
         return job_id_arg
 
-    # Check for PURSER_JOB_ID environment variable first
-    env_job_id = os.environ.get("PURSER_JOB_ID")
+    # Check for LOGIST_JOB_ID environment variable first
+    env_job_id = os.environ.get("LOGIST_JOB_ID")
     if env_job_id:
-        click.echo(f"   → No job ID provided. Using PURSER_JOB_ID environment variable: '{env_job_id}'")
+        click.echo(f"   → No job ID provided. Using LOGIST_JOB_ID environment variable: '{env_job_id}'")
         return env_job_id
 
     # Fall back to reading current job from jobs index
@@ -351,7 +351,7 @@ def get_job_id(ctx, job_id_arg: str | None) -> str | None:
 @click.version_option(version="0.1.0", prog_name="logist")
 @click.option(
     "--jobs-dir",
-    envvar="PURSER_JOBS_DIR",
+    envvar="LOGIST_JOBS_DIR",
     default=os.path.expanduser("~/.logist/jobs"),
     help="The root directory for jobs and the jobs_index.json file.",
     type=click.Path(),

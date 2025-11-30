@@ -89,10 +89,10 @@ Cline must be configured with access to your preferred LLM providers:
 1. **Set environment variables (optional but recommended):**
    ```bash
    # Set custom jobs directory
-   export PURSER_JOBS_DIR="./my-jobs"
+   export LOGIST_JOBS_DIR="./my-jobs"
 
    # Set current job ID
-   export PURSER_JOB_ID="demo-job"
+   export LOGIST_JOB_ID="demo-job"
    ```
 
 2. **Create a job specification:**
@@ -117,9 +117,9 @@ Cline must be configured with access to your preferred LLM providers:
    logist job status demo
    ```
 
-   **Or omit job ID if PURSER_JOB_ID is set:**
+   **Or omit job ID if LOGIST_JOB_ID is set:**
    ```bash
-   logist job status  # Uses value from PURSER_JOB_ID
+   logist job status  # Uses value from LOGIST_JOB_ID
    ```
 
 ## 📋 Testing Procedure

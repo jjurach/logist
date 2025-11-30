@@ -79,7 +79,7 @@ This document outlines the ordered implementation of Logist's core features in s
 **Dependencies:** Job listing works (Phase 1.2), job creation works (Phase 1.3)
 **Files (Read):** `$JOBS_DIR/jobs_index.json`
 **Files (Write):** Updates `$JOBS_DIR/jobs_index.json`
-**Verification:** Changes current job in jobs index, respects PURSER_JOB_ID env var
+**Verification:** Changes current job in jobs index, respects LOGIST_JOB_ID env var
 **Dependency Metadata:** Required for units with optional job IDs (most job commands)
 **Testing Notes:** Does not interact with external LLM provider. Add more comprehensive test cases to demo script (see logist/docs/06_testing_strategy.md for extension guidelines).
 
