@@ -95,27 +95,27 @@ This document outlines the ordered implementation of Logist's core features in s
 **Verification:** Workspace directory exists and contains working copy of project
 **Dependency Metadata:** Required for: job_step_command, job_preview_command, job_run_command
 
-### 7. job_step_command
-**Description:** Implement `logist job step` Command
-**Objective:** Execute single workflow step with state transition in isolated workspace
-**Scope:** Chdir to workspace, state machine transitions, agent role execution, --dry-run mode
-**Dependencies:** Isolation environment set up (Phase 3.1), job status (Phase 2.1)
-**Files (Read):** `job_manifest.json`, role configs, `$JOB_DIR/workspace/` directory
-**Files (Write):** Updates `job_manifest.json`, writes to workspace (evidence), Git commits
-**Verification:** Advances job through one state (PENDING→RUNNING, etc.), changes committed to workspace
-**Dependency Metadata:** Required for: job_preview_command, job_run_command, state_persistence_recovery, error_handling_system, metrics_cost_tracking_system
-**Testing Notes:** Interacts with external LLM provider via `cline --oneshot`. Unit tests should use careful mocks. May not be easily demoable in live demo script - suggest using regression testing with historical fixtures (see logist/docs/06_testing_strategy.md for details).
-
-### 8. job_preview_command
+### 7. job_preview_command
 **Description:** Implement `logist job preview` Command
 **Objective:** Show next agent prompt without execution
 **Scope:** Prompt generation, task context assembly from isolated workspace, no state changes
-**Dependencies:** Isolation environment (Phase 3.1), step preparation logic (Phase 3.2)
+**Dependencies:** Isolation environment set up (Phase 3.6)
 **Files (Read):** `job_manifest.json`, role configs, `$JOB_DIR/workspace/` content
 **Files (Write):** Console output only (no state or file changes)
 **Verification:** Displays formatted prompts for Worker/Supervisor execution using workspace context
-**Dependency Metadata:** Required for debugging/inspection (no dependents)
+**Dependency Metadata:** Required for debugging/inspection (no dependents), enables context validation before job_step
 **Testing Notes:** Does not interact with external LLM provider. Add more comprehensive test cases to demo script (see logist/docs/06_testing_strategy.md for extension guidelines).
+
+### 8. job_step_command
+**Description:** Implement `logist job step` Command
+**Objective:** Execute single workflow step with state transition in isolated workspace
+**Scope:** Chdir to workspace, state machine transitions, agent role execution, --dry-run mode
+**Dependencies:** Isolation environment set up (Phase 3.6), job status (Phase 2.1), job preview works (Phase 3.7)
+**Files (Read):** `job_manifest.json`, role configs, `$JOB_DIR/workspace/` directory
+**Files (Write):** Updates `job_manifest.json`, writes to workspace (evidence), Git commits
+**Verification:** Advances job through one state (PENDING→RUNNING, etc.), changes committed to workspace
+**Dependency Metadata:** Required for: job_run_command, state_persistence_recovery, error_handling_system, metrics_cost_tracking_system
+**Testing Notes:** Interacts with external LLM provider via `cline --oneshot`. Unit tests should use careful mocks. May not be easily demoable in live demo script - suggest using regression testing with historical fixtures (see logist/docs/06_testing_strategy.md for details).
 
 ### 9. job_poststep_command
 **Description:** Implement `logist job poststep` Command
