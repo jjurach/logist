@@ -82,11 +82,31 @@ class TestCLICommands:
         assert result.exit_code == 0
         assert "Warning: The job directory" in result.output
 
-    def test_job_select_command(self):
-        """Test the job select command."""
-        result = self.runner.invoke(main, ["job", "select", "my-job"])
+    def test_job_select_command(self, tmp_path):
+        """Test the job select command with proper setup."""
+        jobs_dir = tmp_path / "jobs"
+
+        # Initialize jobs directory
+        result = self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "init"])
         assert result.exit_code == 0
-        assert "Setting 'my-job' as the current job" in result.output
+
+        # Create a job
+        job_dir = tmp_path / "my-job"
+        job_dir.mkdir()
+        result = self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "job", "create", str(job_dir)])
+        assert result.exit_code == 0
+
+        # Select the job
+        result = self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "job", "select", "my-job"])
+        assert result.exit_code == 0
+        assert "'my-job' is now the current job" in result.output
+
+        # Verify the jobs_index.json was updated
+        jobs_index_path = jobs_dir / "jobs_index.json"
+        assert jobs_index_path.exists()
+        with open(jobs_index_path, 'r') as f:
+            jobs_index = json.load(f)
+        assert jobs_index["current_job_id"] == "my-job"
 
     def test_command_uses_current_job(self):
         """Test that a command uses the current job if no ID is given."""
