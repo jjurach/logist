@@ -99,9 +99,55 @@ class PlaceholderJobManager:
         return {"job_id": job_id, "raw_data": "..."}
 
     def list_jobs(self, jobs_dir: str) -> list:
-        """Simulate listing active jobs."""
-        print(f"📜 [PURSER] Listing all active jobs from index at '{os.path.join(jobs_dir, 'jobs_index.json')}'")
-        return []
+        """List all active jobs from jobs index and their manifests."""
+        jobs_index_path = os.path.join(jobs_dir, "jobs_index.json")
+
+        # Check if jobs directory is initialized
+        if not os.path.exists(jobs_index_path):
+            return []
+
+        try:
+            # Read jobs index
+            with open(jobs_index_path, 'r') as f:
+                jobs_index = json.load(f)
+
+            jobs_data = []
+            jobs_map = jobs_index.get("jobs", {})
+
+            # Process each job
+            for job_id, job_path in jobs_map.items():
+                job_manifest_path = os.path.join(job_path, "job_manifest.json")
+                job_info = {
+                    "job_id": job_id,
+                    "path": job_path,
+                    "status": "UNKNOWN",
+                    "description": "No description available",
+                    "phase": "unknown"
+                }
+
+                try:
+                    # Read job manifest
+                    if os.path.exists(job_manifest_path):
+                        with open(job_manifest_path, 'r') as f:
+                            manifest = json.load(f)
+
+                        job_info.update({
+                            "status": manifest.get("status", "UNKNOWN"),
+                            "description": manifest.get("description", "No description available"),
+                            "phase": manifest.get("current_phase", "unknown")
+                        })
+
+                except (json.JSONDecodeError, KeyError):
+                    # Manifest exists but is malformed or missing keys
+                    job_info["description"] = "Job manifest corrupted"
+
+                jobs_data.append(job_info)
+
+            return jobs_data
+
+        except (json.JSONDecodeError, OSError) as e:
+            # Jobs index is malformed or inaccessible
+            return []
 
     def force_success(self, job_id: str) -> None:
         """Simulate forcing a task to success."""
@@ -323,8 +369,43 @@ def list_jobs(ctx):
     jobs_dir = ctx.obj["JOBS_DIR"]
     click.echo("📜 Executing 'logist job list'")
     jobs = manager.list_jobs(jobs_dir)
+
     if not jobs:
         click.echo("📭 No active jobs found")
+        return
+
+    # Get current job for marking
+    jobs_index_path = os.path.join(jobs_dir, "jobs_index.json")
+    current_job_id = None
+    try:
+        if os.path.exists(jobs_index_path):
+            with open(jobs_index_path, 'r') as f:
+                jobs_index = json.load(f)
+            current_job_id = jobs_index.get("current_job_id")
+    except (json.JSONDecodeError, OSError):
+        pass
+
+    click.echo("\n📋 Active Jobs:")
+    click.echo("-" * 80)
+    click.echo("Job ID               Status       Description" )
+    click.echo("-" * 80)
+
+    for job in jobs:
+        # Mark current job
+        marker = " 👈" if job["job_id"] == current_job_id else ""
+
+        # Format status with color
+        status = job["status"]
+        if status == "PENDING":
+            status_display = click.style(status, fg="yellow")
+        elif status in ["RUNNING", "SUCCESS"]:
+            status_display = click.style(status, fg="green")
+        elif status in ["STUCK", "FAILED", "CANCELED"]:
+            status_display = click.style(status, fg="red")
+        else:
+            status_display = status
+
+        click.echo(f"{job['job_id']:<20} {status_display:<12} {job['description']}{marker}")
 
 
 @role.command(name="list")
