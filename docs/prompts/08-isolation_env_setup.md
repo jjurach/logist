@@ -10,6 +10,7 @@ You are implementing the `isolation_env_setup` from the Logist master developmen
 4. **Test:** Verify functionality
 5. **Document:** Update documentation
 6. **Verify:** Ensure requirements are met
+7. **Commit:** Follow the Git Status and Commit protocol in `_meta_prompt_instructions.md`
 
 ## Verification Standards
 - ✅ All required functionality implemented

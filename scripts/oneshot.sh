@@ -29,7 +29,7 @@ if [[ ! -f "$META_PROMPT_FILE" ]]; then
     echo "Warning: Meta-prompt file '$META_PROMPT_FILE' not found"
     FILE_ARGS="--file $PROMPT_FILE"
 else
-    FILE_ARGS="--file $META_PROMPT_FILE $PROMPT_FILE"
+    FILE_ARGS="--file $META_PROMPT_FILE --file $PROMPT_FILE"
 fi
 
 echo "Executing Cline oneshot: $PROMPT_BASENAME"
