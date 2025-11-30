@@ -174,10 +174,36 @@ class PlaceholderJobManager:
         except OSError as e:
             raise click.ClickException(f"Failed to update jobs index: {e}")
 
-    def get_job_status(self, job_id: str) -> dict:
-        """Simulate retrieving job status."""
-        print(f"📋 [PURSER] Retrieving status for job '{job_id}'")
-        return {"job_id": job_id, "status": "PENDING", "phase": "planning"}
+    def get_job_status(self, job_id: str, jobs_dir: str) -> dict:
+        """Retrieve detailed job status from job manifest."""
+        jobs_index_path = os.path.join(jobs_dir, "jobs_index.json")
+
+        # Check if jobs directory is initialized
+        if not os.path.exists(jobs_index_path):
+            raise click.ClickException(f"Jobs directory not initialized. Run 'logist init' first.")
+
+        try:
+            # Read jobs index to find job path
+            with open(jobs_index_path, 'r') as f:
+                jobs_index = json.load(f)
+
+            jobs_map = jobs_index.get("jobs", {})
+            if job_id not in jobs_map:
+                raise click.ClickException(f"Job '{job_id}' not found in jobs index.")
+
+            job_dir = jobs_map[job_id]
+            manifest_path = os.path.join(job_dir, "job_manifest.json")
+
+            # Read job manifest
+            if os.path.exists(manifest_path):
+                with open(manifest_path, 'r') as f:
+                    manifest = json.load(f)
+                return manifest
+            else:
+                raise click.ClickException(f"Job manifest not found for '{job_id}' at {manifest_path}")
+
+        except (json.JSONDecodeError, OSError) as e:
+            raise click.ClickException(f"Failed to read job status: {e}")
 
     def get_job_history(self, job_id: str) -> list:
         """Simulate retrieving job history."""
@@ -413,14 +439,35 @@ def preview(ctx, job_id: str | None):
 
 @job.command()
 @click.argument("job_id", required=False)
+@click.option("--json", "output_json", is_flag=True, help="Output raw JSON instead of formatted text")
 @click.pass_context
-def status(ctx, job_id: str | None):
+def status(ctx, job_id: str | None, output_json: bool):
     """Display job status and manifest."""
+    jobs_dir = ctx.obj["JOBS_DIR"]
     click.echo("📋 Executing 'logist job status'")
     if final_job_id := get_job_id(ctx, job_id):
-        status_data = manager.get_job_status(final_job_id)
-        click.echo(f"\n📋 Job '{final_job_id}' Status:")
-        click.echo(f"   Status: {status_data['status']}")
+        try:
+            status_data = manager.get_job_status(final_job_id, jobs_dir)
+            if output_json:
+                click.echo(json.dumps(status_data, indent=2))
+            else:
+                click.echo(f"\n📋 Job '{final_job_id}' Status:")
+                click.echo(f"   📍 Description: {status_data.get('description', 'No description')}")
+                click.echo(f"   🔄 Status: {status_data.get('status', 'UNKNOWN')}")
+                click.echo(f"📊 Phase: {status_data.get('current_phase', 'none')}")
+                metrics = status_data.get('metrics', {})
+                if metrics:
+                    click.echo(f"   💰 Cost: ${metrics.get('cumulative_cost', 0):.4f}")
+                    click.echo(f"   ⏱️  Time: {metrics.get('cumulative_time_seconds', 0):.2f} seconds")
+                history = status_data.get('history', [])
+                if history:
+                    click.echo("   📚 Recent History:")
+                    for event in history[-3:]:  # Show last 3 events
+                        click.echo(f"   • {event}")
+                else:
+                    click.echo("   📚 History: No events recorded yet")
+        except click.ClickException as e:
+            click.secho(f"❌ {e}", fg="red")
     else:
         click.secho("❌ No job ID provided and no current job is selected.", fg="red")
 
