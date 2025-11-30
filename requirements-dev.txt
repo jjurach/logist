@@ -1,0 +1,8 @@
+-r requirements.txt
+pytest>=7.0.0
+pytest-cov
+click>=8.0.0
+black
+isort
+flake8
+mypy

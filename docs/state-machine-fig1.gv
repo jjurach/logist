@@ -1,0 +1,74 @@
+digraph "Logist State Machine" {
+    rankdir=TB;
+    node [shape=circle, fontsize=10, fontname="Arial"];
+    edge [fontsize=9, fontname="Arial"];
+
+    // Start node
+    start [shape=point, label=""];
+
+    // Core automaton states
+    PENDING [label="PENDING\n(ready to run)"];
+    RUNNING [label="RUNNING\n[agent executes]\n(current_agent)", shape=doublecircle];
+    SUCCESS [label="SUCCESS\n(final acceptance)", shape=doublecircle, fillcolor=lightgreen, style=filled];
+    CANCELED [label="CANCELED\n(terminated)", shape=doublecircle, fillcolor=lightcoral, style=filled];
+
+    // Command-driven states (define what runs next)
+    REVIEW_REQUIRED [label="REVIEW_REQUIRED\n(run Supervisor --oneshot\nto assess work)", fillcolor=orange, style=filled];
+    REVIEWING [label="REVIEWING\n(Supervisor is running\nin --oneshot mode)", fillcolor=orange, style=filled];
+    INTERVENTION_REQUIRED [label="INTERVENTION_REQUIRED\n(requires human intervention\nfor fixes/adjustments)", fillcolor=red, style=filled];
+    APPROVAL_REQUIRED [label="APPROVAL_REQUIRED\n(requires final human approval\nbefore SUCCESS)", fillcolor=lightcyan, style=filled];
+
+    // Transitions from start
+    start -> PENDING [label="job created/\ninitial"];
+
+    // Worker execution cycle
+    PENDING -> RUNNING [label="schedule/run\n[set worker]"];
+
+    // All Worker completion → Supervisor review (command-driven)
+    RUNNING -> REVIEW_REQUIRED [label="Worker completed\n(run Supervisor --oneshot\nfor assessment)"];
+
+    // Stuck agent recovery (automatic health monitoring)
+    RUNNING -> PENDING [label="stuck/recovery\n(no active execution)", style=dashed, color=red];
+
+    // Supervisor execution and decision
+    REVIEW_REQUIRED -> REVIEWING [label="start Supervisor\n--oneshot execution"];
+    REVIEWING -> APPROVAL_REQUIRED [label="Supervisor approves\n(final approval needed)"];
+    REVIEWING -> INTERVENTION_REQUIRED [label="Supervisor requests\nhuman intervention"];
+
+
+
+    // Stuck supervisor recovery
+    REVIEWING -> REVIEW_REQUIRED [label="stuck/recovery\n(no active execution)", style=dashed, color=red];
+
+    // Human approval decisions
+    APPROVAL_REQUIRED -> SUCCESS [label="job approve\n→ SUCCESS"];
+    APPROVAL_REQUIRED -> PENDING [label="job continue\n→ PENDING (ready to retry)"];
+
+    // Human intervention decisions
+    INTERVENTION_REQUIRED -> PENDING [label="job continue\n→ PENDING (ready for job run/step)"];
+    INTERVENTION_REQUIRED -> REVIEW_REQUIRED [label="job continue\n→ REVIEW_REQUIRED (ready for re-review)"];
+    INTERVENTION_REQUIRED -> CANCELED [label="job terminate\n→ CANCELED"];
+
+    // Direct cancellation (incomplete execution)
+    PENDING -> CANCELED [label="cancel before execution"];
+
+    // Optional: Paused state if needed for rate limiting
+    RUNNING -> PAUSED [label="rate limit/\nexternal pause", style=dashed];
+    PAUSED -> RUNNING [label="resume"];
+
+    // Subgraph to group command-driven states
+    subgraph cluster_commands {
+        label="Command-Driven States";
+        style=dotted;
+        REVIEW_REQUIRED;
+        REVIEWING;
+        INTERVENTION_REQUIRED;
+        APPROVAL_REQUIRED;
+    }
+
+    // Legend
+    {
+        rank=sink;
+        LEGEND [shape=box, label="Command Flow:\nPENDING → run Worker (RUNNING)\nREVIEW_REQUIRED → run Supervisor (REVIEWING)\nINTERVENTION_REQUIRED → human fixes\nAPPROVAL_REQUIRED → human approves\n\njob continue: Sets state ready, then use job run/step to execute\nRecovery: Stuck agents auto-reset to pending states"];
+    }
+}

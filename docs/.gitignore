@@ -1,0 +1,3 @@
+# Ignore generated state machine PNG files
+state*.png
+state-machine-fig*.png
