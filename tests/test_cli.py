@@ -118,7 +118,7 @@ class TestCLICommands:
         jobs_dir = tmp_path / "jobs"
         jobs_dir.mkdir()
         
-        mocker.patch.object(PlaceholderJobManager, "get_current_job_id", return_value=None)
+        mocker.patch.object(JobManager, "get_current_job_id", return_value=None)
         result = self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "job", "status"])
         assert result.exit_code == 0  # click exits 0 on handled errors
         assert "No job ID provided and no current job is selected" in result.output
