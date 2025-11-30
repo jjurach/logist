@@ -1,5 +1,34 @@
 # Common Meta-Prompt Instructions for All Logist Prompts
 
+## Success/Failure Communication Protocol
+When completing any Logist implementation task:
+
+### Success Reporting
+When the goal of the prompt has been fully met and all verification standards satisfied:
+```
+🎉 =============== SUCCESS =============== 🎉
+🎯 All requirements completed successfully!
+📋 Verification standards: ✅ ✅ ✅ ✅
+🏆 Implementation complete and working as expected
+```
+
+### Failure/Error Communication
+If the task cannot be completed or issues are encountered:
+```
+❌ =============== FAILURE ================ ❌
+⚠️  Issue: [Clear description of the problem]
+🔍 Investigation: [What was checked/tried]
+💡 Solution needed: [What is required to proceed]
+```
+
+### Key Requirements
+- **Clear banners**: Use prominent banners with emojis for immediate visibility
+- **Specific details**: Explain exactly what worked or what failed
+- **Actionable information**: Provide context for next steps or fixes
+- **Truthful reporting**: Accurately represent completion status without exaggeration
+
+---
+
 ## Git Status and Commit Protocol
 After completing the implementation for any Logist prompt:
 
