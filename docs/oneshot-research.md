@@ -12,6 +12,20 @@ Cline CLI supports oneshot mode using the `--oneshot --no-interactive` flags:
 cline "task prompt" --oneshot --no-interactive
 ```
 
+### Enhanced File Attachment Capabilities
+Cline supports attaching multiple documents using the `--file` option for rich context:
+
+```bash
+# Single file attachment
+cline --oneshot --file requirements.md "Implement the requirements"
+
+# Multiple file attachments
+cline --oneshot --file requirements.md --file guidelines.md --file examples.py "Implement following requirements and guidelines using examples as reference"
+
+# Combined with --yolo flag for autonomous execution
+cline --yolo --oneshot --file task.md --file context.json --file reference_code.py "Complete the task using the provided context and reference code"
+```
+
 ### Task State Management
 Tasks are managed through a directory-based system at `~/.cline/data/tasks/<TASK_ID>/` containing:
 - `task_metadata.json` - Execution metadata

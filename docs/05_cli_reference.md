@@ -23,6 +23,29 @@ Specifies the root directory where the `jobs_index.json` file and all individual
 
 ---
 
+## File Attachment with Cline Integration
+
+Logist integrates with Cline's `--file` option to provide rich context for task execution:
+
+### Single File Attachment
+```bash
+cline --oneshot --file task_spec.md "complete this task"
+```
+
+### Multiple File Attachments
+```bash
+cline --oneshot --file requirements.md --file guidelines.md --file examples.py "implement following all attached documents"
+```
+
+### Logist Enhanced Execution
+The `scripts/oneshot.sh` script automatically attaches:
+- `_meta_prompt_instructions.md` (common procedures)
+- Specified prompt file (task-specific instructions)
+
+This provides standardized context across all Logist executions while allowing task-specific customizations.
+
+---
+
 ## Top-Level Commands
 
 ### `logist --version`

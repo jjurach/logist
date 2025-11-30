@@ -9,12 +9,44 @@ The `--oneshot` flag triggers full autonomous mode, but to enable batch processi
 - **Detachment**: Use `nohup &` to run `cline --oneshot` in the background, detached from the controlling terminal.
 - **Process Management**: Capture the process ID (PID) for potential termination/restart operations.
 - **State Monitoring**: Do not attempt to parse live log output; instead, poll persistent JSON state files for status updates.
+- **File Attachments**: Pass multiple documents using `--file` flags for rich context in batch processing.
 
-Example shell invocation:
+### Enhanced Oneshot with File Attachments
+
+Cline's `--file` option enables attaching multiple documents to provide comprehensive context:
+
 ```bash
-nohup cline --oneshot -t "task description" &
-PID=$!
-echo "Started PID: $PID"
+# Single document attachment
+cline --oneshot --file task_spec.md "Analyze this task specification"
+
+# Multiple document attachments for rich context
+cline --oneshot --file requirements.md --file guidelines.md --file reference_implementation.py "Implement the feature described in requirements.md following guidelines.md and using reference_implementation.py as a template"
+```
+
+### Batch Processing with Multiple Documents
+
+For complex batch operations, attach relevant documentation, schemas, and context files:
+
+```bash
+# Development task with full context
+cline --oneshot --file project_overview.md --file api_schema.json --file coding_standards.md --file test_cases.py "Implement the API endpoint following project overview, using the API schema, adhering to coding standards, and ensuring test cases pass"
+
+# Documentation task with multiple sources
+cline --oneshot --file architecture.md --file implementation_details.md --file deployment_guide.md "Generate comprehensive documentation using the attached architecture, implementation details, and deployment guide"
+
+# Research task with multiple data sources
+cline --oneshot --file research_question.md --file data_set1.csv --file data_set2.csv --file methodology.md "Analyze the research question using the provided data sets and methodology approach"
+```
+
+Example Logist batch execution with rich context:
+```bash
+# Using the enhanced oneshot.sh script for batch processing
+scripts/oneshot.sh project_tasks/task_001.md &
+scripts/oneshot.sh project_tasks/task_002.md &
+scripts/oneshot.sh project_tasks/task_003.md &
+
+# Monitor all tasks for completion
+for pid in "${PIDS[@]}"; do wait "$pid"; done
 ```
 
 ## Status Monitoring via State File Polling
