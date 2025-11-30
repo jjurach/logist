@@ -34,11 +34,11 @@ cline --version  # Should show version 3.38.3 or higher
 # Configure API access (choose one)
 # OpenAI
 cline config set openai.key sk-your-openai-key-here
-cline config set openai.model gpt-4-turbo
+cline config set openai.model grok-code-fast-1
 
 # Anthropic
 cline config set anthropic.key sk-your-anthropic-key-here
-cline config set anthropic.model claude-3-opus-20240229
+cline config set anthropic.model gemini-2.5-flash
 ```
 
 ### Python Dependencies
@@ -64,7 +64,7 @@ chmod +x logist/scripts/oneshot-start.py
 ./oneshot-start.py --prompt "Create a hello world script in Python" --verbose
 
 # With custom model and context
-./oneshot-start.py --prompt "Analyze this data" --model gpt-4 --context data.json --json-output
+./oneshot-start.py --prompt "Analyze this data" --model grok-code-fast-1 --context data.json --json-output
 
 # Background execution with monitoring PID
 PID=$(./oneshot-start.py --prompt "Long running task..." 2>&1 | grep -o "PID: [0-9]*" | cut -d' ' -f2)
@@ -115,7 +115,7 @@ echo "Task launched with PID: $PID"
 ./batch-executor.py tasks.json --auto-restart --verbose --output results.json
 
 # Custom timeout and model
-./batch-executor.py --prompt "Analyze this code" --model gpt-4 --timeout 30 --json-output
+./batch-executor.py --prompt "Analyze this code" --model grok-code-fast-1 --timeout 30 --json-output
 ```
 
 ### 4. `logist/scripts/analyze-variance.py`
@@ -163,7 +163,7 @@ cline config list  # Should show API keys configured
 ./scripts/oneshot-start.py --prompt "Create a hello world script in Python" --verbose
 
 Expected output:
-Launching task: cline --oneshot --no-interactive --model gpt-4 [...command...]
+Launching task: cline --oneshot --no-interactive --model grok-code-fast-1 [...command...]
 ✅ Oneshot execution completed successfully
 Output: [JSON response with COMPLETED/STUCK/RETRY status]
 ```
@@ -235,7 +235,7 @@ EOF
 Starting batch execution of 3 tasks...
 
 --- Executing script-generator (1/3) ---
-Launching task: cline --oneshot --no-interactive --model gpt-4 [...script-generator prompt...]
+Launching task: cline --oneshot --no-interactive --model grok-code-fast-1 [...script-generator prompt...]
 Monitoring script-generator (ID: task_1734567890123)...
 Task task_1734567890123 completed: TIMEOUT_COMPLETE
 Restart Attempts: 2
@@ -281,7 +281,7 @@ grep -E "(tokens_used|cost_usd|duration)" variance-test.log
 {
   "task_id": "1734567890123456",
   "status": "TIMEOUT_COMPLETE",
-  "model": "gpt-4-turbo",
+  "model": "grok-code-fast-1",
   "api_calls": 3,
   "cost_usd": 0.0000,
   "restart_attempts": 1,
@@ -309,7 +309,7 @@ Restart #1 completed for task 1734567890123456
     "task_id": "task_001",
     "status": "TIMEOUT_COMPLETE",
     "restart_attempts": 2,
-    "model": "gpt-4",
+    "model": "grok-code-fast-1",
     "evidence_files": ["output.py", "test-output.txt"]
   }
 ]

@@ -11,7 +11,7 @@ Every role requires exactly four mandatory attributes:
 - **`name`**: Unique identifier for the role (e.g., "Worker", "Supervisor", "Tester")
 - **`description`**: Human-readable explanation of the role's expertise and responsibilities
 - **`instructions`**: Complete meta-prompt defining the role's behavior, constraints, and decision-making framework
-- **`llm_model`**: Specific LLM model identifier for this role (e.g., "gpt-4", "claude-3", "gemini-pro")
+- **`llm_model`**: Specific LLM model identifier for this role (e.g., "grok-code-fast-1", "gemini-2.5-flash")
 
 ### Example Role Definitions
 
@@ -22,13 +22,13 @@ Every role requires exactly four mandatory attributes:
       "name": "Worker",
       "description": "Expert software development and implementation agent specializing in code generation, debugging, and technical problem-solving",
       "instructions": "You are an expert software engineer...",
-      "llm_model": "gpt-4-turbo"
+      "llm_model": "grok-code-fast-1"
     },
     "Supervisor": {
       "name": "Supervisor",
       "description": "Quality assurance and oversight specialist focused on reviewing outputs, identifying issues, and providing constructive feedback",
       "instructions": "You are a senior technical reviewer...",
-      "llm_model": "claude-3-sonnet"
+      "llm_model": "gemini-2.5-flash"
     }
   }
 }
@@ -107,7 +107,7 @@ Each job directory maintains a **`jobHistory.json`** file that captures the comp
         "metadata": {
           "role": "Worker",
           "phase": "PENDING",
-          "model": "gpt-4-turbo",
+          "model": "grok-code-fast-1",
           "temperature": 0.7
         }
       },

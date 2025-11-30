@@ -25,7 +25,7 @@ def run_command(cmd, verbose=False):
     result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
     return result.returncode, result.stdout, result.stderr
 
-def launch_oneshot_task(prompt, model="gpt-4", context_files=None, verbose=False):
+def launch_oneshot_task(prompt, model="grok-code-fast-1", context_files=None, verbose=False):
     """
     Launch a oneshot task and return task ID and process info.
 
@@ -93,7 +93,7 @@ def launch_oneshot_task(prompt, model="gpt-4", context_files=None, verbose=False
         print(f"Failed to parse PID from output: {e}", file=sys.stderr)
         return None, None
 
-def batch_execute_tasks(tasks, model="gpt-4", auto_restart=True, timeout_minutes=10, verbose=False):
+def batch_execute_tasks(tasks, model="grok-code-fast-1", auto_restart=True, timeout_minutes=10, verbose=False):
     """
     Execute multiple tasks in batch with monitoring and restart.
 
@@ -199,7 +199,7 @@ Examples:
     parser.add_argument(
         '--model', '-m',
         default='gpt-4',
-        help='LLM model to use (default: gpt-4)'
+        help='LLM model to use (default: grok-code-fast-1)'
     )
 
     parser.add_argument(

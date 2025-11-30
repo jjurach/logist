@@ -12,25 +12,16 @@ import subprocess
 
 import click
 
-
-def find_git_root(cwd=None):
-    """Find the root directory of the Git repository from the current working directory."""
-    if cwd is None:
-        cwd = os.getcwd()
-
-    original = cwd
-    while cwd != os.path.dirname(cwd):
-        if os.path.isdir(os.path.join(cwd, '.git')):
-            return cwd
-        cwd = os.path.dirname(cwd)
-
-    return None
+from logist import workspace_utils # Import the new module
+from logist.job_state import JobStateError
+from logist.job_context import assemble_job_context, format_llm_prompt, JobContextError
+from typing import Optional # For optional type hints
 
 
 class PlaceholderLogistEngine:
     """Placeholder orchestration engine that prints what it would do."""
 
-    def run_job(self, job_id: str, job_dir: str, model: str = "gpt-4", resume: bool = False) -> bool:
+    def run_job(self, job_id: str, job_dir: str, model: str = "grok-code-fast-1", resume: bool = False) -> bool:
         """Simulate running a job continuously."""
         manager.setup_workspace(job_dir)
         print(f"🔄 [LOGIST] Running job '{job_id}' continuously with model '{model}'")
@@ -298,7 +289,7 @@ class PlaceholderJobManager:
         workspace_dir = os.path.join(job_dir, "workspace")
         workspace_git = os.path.join(workspace_dir, ".git")
 
-        git_root = find_git_root()
+        git_root = workspace_utils.find_git_root() # Use the function from the new module
         if git_root is None:
             raise click.ClickException("Not in a Git repository. Cannot setup workspace.")
 
@@ -459,7 +450,7 @@ def select_job(ctx, job_id: str):
 
 @job.command()
 @click.argument("job_id", required=False)
-@click.option("--model", default="gpt-4", help="LLM model for execution")
+@click.option("--model", default="grok-code-fast-1", help="LLM model for execution")
 @click.option("--resume", is_flag=True, help="Resume from last checkpoint")
 @click.pass_context
 def run(ctx, job_id: str | None, model: str, resume: bool):
@@ -496,16 +487,51 @@ def step(ctx, job_id: str | None, dry_run: bool):
 
 @job.command()
 @click.argument("job_id", required=False)
+@click.option("--role", type=str, help="Override agent selection to preview specific role (Worker/Supervisor).")
+@click.option("--phase", type=str, help="Override to preview specific phase instead of current.")
+@click.option(
+    "--format",
+    type=click.Choice(["human-readable", "json-files", "raw-context"]),
+    default="human-readable",
+    help="Output format (human-readable, json-files, or raw-context)."
+)
 @click.pass_context
-def preview(ctx, job_id: str | None):
+def preview(
+    ctx, 
+    job_id: str | None, 
+    role: Optional[str], 
+    phase: Optional[str], 
+    format: str
+):
     """Display the prompt for the next agent run without executing."""
     click.echo("🔍 Executing 'logist job preview'")
+    jobs_dir = ctx.obj["JOBS_DIR"]
+
     if final_job_id := get_job_id(ctx, job_id):
         job_dir = get_job_dir(ctx, final_job_id)
         if job_dir is None:
-            click.secho("❌ Could not find job directory.", fg="red")
+            click.secho(f"❌ Could not find job directory for job ID '{final_job_id}'.", fg="red")
             return
-        engine.preview_job(final_job_id, job_dir)
+        
+        try:
+            # Assemble the context using the new function
+            context = assemble_job_context(
+                job_id=final_job_id,
+                job_dir=job_dir,
+                jobs_dir=jobs_dir,
+                role_override=role,
+                phase_override=phase
+            )
+            
+            # Format the prompt using the new function
+            formatted_output = format_llm_prompt(context, format)
+            click.echo(formatted_output)
+            
+        except (JobStateError, JobContextError) as e:
+            click.secho(f"❌ Error during job preview: {e}", fg="red")
+        except Exception as e:
+            click.secho(f"❌ An unexpected error occurred: {e}", fg="red")
+            
     else:
         click.secho("❌ No job ID provided and no current job is selected.", fg="red")
 

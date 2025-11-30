@@ -74,7 +74,7 @@ Cline must be configured with access to your preferred LLM providers:
 2. **Configure Cline**:
    ```bash
    cline config set openai.key sk-your-key-here
-   cline config set openai.model gpt-4-turbo
+   cline config set openai.model grok-code-fast-1
    ```
 3. **Verify setup**:
    ```bash

@@ -120,7 +120,7 @@ def process_llm_response(llm_output: str) -> Dict[str, Any]:
 
 def execute_llm_with_cline(
     context: Dict[str, Any],
-    model: str = "gpt-4-turbo",
+    model: str = "grok-code-fast-1",
     timeout: int = 300,
     workspace_dir: str = None
 ) -> tuple[Dict[str, Any], float]:

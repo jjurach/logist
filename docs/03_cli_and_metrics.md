@@ -127,7 +127,7 @@ The Logist continuously monitors resource utilization across all Agent Runs in a
   "job_spec": {
     "cost_threshold": 5000,    // $50.00 maximum
     "time_threshold_minutes": 120,  // 2 hours maximum
-    "default_model": "gpt-4-turbo"
+    "default_model": "grok-code-fast-1"
   }
 }
 ```

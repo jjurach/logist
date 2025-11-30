@@ -31,7 +31,7 @@ def get_latest_task_id():
             task_id = line.split(': ')[1].strip()
     return task_id
 
-def start_oneshot(prompt, model=None, no_interactive=True):
+def start_oneshot(prompt, model="grok-code-fast-1", no_interactive=True):
     """
     Start a oneshot execution and return the task ID
 
@@ -77,7 +77,7 @@ def start_oneshot(prompt, model=None, no_interactive=True):
 def main():
     parser = ArgumentParser(description="Start a Cline oneshot task")
     parser.add_argument('prompt', help='Task prompt')
-    parser.add_argument('--model', '-m', help='Model to use')
+    parser.add_argument('--model', '-m', default="grok-code-fast-1", help='Model to use (default: grok-code-fast-1)')
     parser.add_argument('--interactive', '-i', action='store_true',
                        help='Allow interactive mode (default: no-interactive)')
 
