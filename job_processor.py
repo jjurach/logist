@@ -1,6 +1,6 @@
 import json
 import os
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from jsonschema import validate, ValidationError
 
 from logist.job_state import JobStateError
@@ -83,46 +83,12 @@ def parse_llm_response(llm_output: str) -> Dict[str, Any]:
     return response
 
 
-def process_llm_response(llm_output: str) -> Dict[str, Any]:
-    """
-    Processes raw LLM output and returns structured response data.
-
-    Args:
-        llm_output: Raw output from the LLM execution.
-
-    Returns:
-        Processed response dictionary with validation and metadata.
-
-    Raises:
-        JobProcessorError: If processing fails.
-    """
-    try:
-        # Parse the LLM output
-        response = parse_llm_response(llm_output)
-
-        # Add processing metadata
-        processed_response = {
-            "action": response["action"],
-            "evidence_files": response["evidence_files"],
-            "summary_for_supervisor": response["summary_for_supervisor"],
-            "job_manifest_url": response.get("job_manifest_url"),  # Optional
-            "processed_at": None,  # Will be set by caller
-            "raw_response": llm_output  # Keep the original for audit
-        }
-
-        return processed_response
-
-    except JobProcessorError:
-        raise
-    except Exception as e:
-        raise JobProcessorError(f"Unexpected processing error: {str(e)}")
-
-
 def execute_llm_with_cline(
     context: Dict[str, Any],
     model: str = "grok-code-fast-1",
     timeout: int = 300,
-    workspace_dir: str = None
+    workspace_dir: str = None,
+    instruction_files: Optional[List[str]] = None
 ) -> tuple[Dict[str, Any], float]:
     """
     Executes an LLM call using the CLINE interface.
@@ -161,6 +127,9 @@ def execute_llm_with_cline(
             "cline", "--yolo", "--oneshot",
             "--file", prompt_file
         ]
+        if instruction_files:
+            for f_path in instruction_files:
+                cmd.extend(["--file", f_path])
 
         # Change to workspace directory if specified
         cwd_dir = workspace_dir if workspace_dir else os.getcwd()
@@ -171,22 +140,88 @@ def execute_llm_with_cline(
             cwd=cwd_dir,
             capture_output=True,
             text=True,
-            timeout=timeout
+            timeout=timeout,
+            shell=False # Prefer shell=False for security and predictability
         )
 
         execution_time = time.time() - start_time
 
         if process.returncode != 0:
+            full_output = process.stdout + process.stderr
             raise JobProcessorError(
-                f"CLINE execution failed with code {process.returncode}: {process.stderr}"
+                f"CLINE execution failed with code {process.returncode}:\n{full_output}"
             )
 
-        # Process the LLM response
-        llm_output = process.stdout
-        processed_response = process_llm_response(llm_output)
+        full_cline_output = process.stdout + process.stderr
 
-        # Add timestamp of processing
-        processed_response["processed_at"] = datetime.now().isoformat()
+        # Extract task ID from CLINE output
+        task_id_match = re.search(r'Task created: (.*?)\n', full_cline_output)
+        if not task_id_match:
+            # Fallback for when CLINE output changes or task ID is not explicitly printed.
+            # This is a heuristic and might need adjustment if CLINE's output format is inconsistent.
+            # A more robust solution might involve 'cline task list' and checking timestamps.
+            task_id_match = re.search(r'\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b', full_cline_output)
+            if not task_id_match:
+                 raise JobProcessorError("Could not extract CLINE task ID from output.")
+
+        task_id = task_id_match.group(1).strip() if task_id_match.group(1).strip() else task_id_match.group(0).strip()
+        
+        # Determine the CLINE task directory
+        # Assuming CLINE stores tasks in ~/.cline/data/tasks/
+        cline_data_dir = os.path.join(os.path.expanduser("~"), ".cline", "data")
+        task_dir = os.path.join(cline_data_dir, "tasks", task_id)
+
+        if not os.path.isdir(task_dir):
+            raise JobProcessorError(f"CLINE task directory not found: {task_dir}")
+
+        api_conversation_history_path = os.path.join(task_dir, "api_conversation_history.json")
+        metadata_path = os.path.join(task_dir, "metadata.json")
+
+        if not os.path.exists(api_conversation_history_path):
+            raise JobProcessorError(f"api_conversation_history.json not found in {task_dir}")
+        if not os.path.exists(metadata_path):
+            raise JobProcessorError(f"metadata.json not found in {task_dir}")
+
+        # Extract JSON response from api_conversation_history.json
+        with open(api_conversation_history_path, 'r') as f:
+            conversation_history = json.load(f)
+
+        llm_response_json = None
+        # Iterate in reverse chronological order
+        for message in reversed(conversation_history):
+            if "content" in message:
+                try:
+                    # Use existing parse_llm_response to extract and validate JSON from content
+                    # Note: parse_llm_response expects a string, so we pass message["content"]
+                    parsed_candidate = parse_llm_response(message["content"])
+                    llm_response_json = parsed_candidate
+                    break # Found the first valid JSON
+                except JobProcessorError:
+                    # Continue searching if this message doesn't contain valid JSON
+                    continue
+
+        if llm_response_json is None:
+            raise JobProcessorError("No valid LLM response JSON found in conversation history.")
+
+        # Extract metrics from metadata.json
+        with open(metadata_path, 'r') as f:
+            metadata = json.load(f)
+
+        metrics = {
+            "token_input": metadata.get("metrics", {}).get("token_counts", {}).get("input", 0),
+            "token_output": metadata.get("metrics", {}).get("token_counts", {}).get("output", 0),
+            "cost_usd": metadata.get("metrics", {}).get("cost_usd", 0.0),
+            "duration_seconds": metadata.get("duration_seconds", execution_time)
+        }
+
+        # Combine LLM response with metrics
+        processed_response = {
+            **llm_response_json, # Unpack the action, evidence_files, summary etc.
+            "processed_at": datetime.now().isoformat(),
+            "metrics": metrics,
+            "raw_cline_output": full_cline_output, # Keep full output for audit/debug
+            "cline_task_id": task_id
+        }
 
         return processed_response, execution_time
 

@@ -1,0 +1,5 @@
+feat: implement system schema compliance
+
+- Create logist/schemas/roles/system.md with LLM response schema instructions.
+- Enhance execute_llm_with_cline to accept instruction_files, parse cline task output (api_conversation_history.json, metadata.json), and extract LLM response JSON and metrics (token usage, cost, duration).
+- Update 09-system-schema.md to reflect implemented changes.

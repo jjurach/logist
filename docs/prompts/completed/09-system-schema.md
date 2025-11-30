@@ -58,53 +58,53 @@ Your final output must be a single JSON object with the following fields:
 Ensure your final response is ONLY this JSON object, wrapped in markdown code fences (```json ... ```). Do not include any conversational text after the JSON.
 ```
 
-### 2. Conceptual Modification to `execute_llm_with_cline()`
-The `execute_llm_with_cline()` function in `logist/logist/job_processor.py` *would be enhanced* to accept an optional list of `instruction_files`.
+### 2. Implemented Modification to `execute_llm_with_cline()`
+The `execute_llm_with_cline()` function in `logist/logist/job_processor.py` **has been enhanced** to accept an optional list of `instruction_files`. It now also extracts the CLINE task ID, reads `api_conversation_history.json` and `metadata.json`, parses the LLM's structured JSON response, and extracts metrics.
 
-#### Proposed Function Signature Update (Conceptual):
+#### Implemented Function Signature Update:
 ```python
 def execute_llm_with_cline(
     context: Dict[str, Any],
     model: str = "grok-code-fast-1",
     timeout: int = 300,
     workspace_dir: str = None,
-    instruction_files: Optional[List[str]] = None # New conceptual parameter
+    instruction_files: Optional[List[str]] = None # New parameter
 ) -> tuple[Dict[str, Any], float]:
-    # ... existing logic ...
-    
-    # Inside, modify the `cline` command construction (conceptual):
-    cmd = [
-        "cline", "--yolo", "--oneshot",
-        "--file", prompt_file # The main prompt file
-    ]
-    if instruction_files:
-        for f_path in instruction_files:
-            cmd.extend(["--file", f_path]) # Add instruction files
-    # ... rest of command construction ...
+    # ... existing logic modified to:
+    # 1. Extend `cmd` with `--file` arguments for instruction_files
+    # 2. Capture full CLINE output (stdout + stderr)
+    # 3. Extract CLINE task ID using regex
+    # 4. Construct path to ~/.cline/data/tasks/<task_id>
+    # 5. Read api_conversation_history.json and metadata.json
+    # 6. Iterate conversation_history in reverse to find first valid JSON via parse_llm_response
+    # 7. Extract token usage, cost, and duration from metadata.json
+    # 8. Return combined LLM response (action, evidence_files, summary etc.) with metrics and processing metadata.
 ```
-This conceptual change enables dynamic inclusion of multiple instruction files (e.g., `system.md`, `worker.json`, `supervisor.json`) in a single `cline` call, allowing for layered instruction.
+This enables dynamic inclusion of multiple instruction files (e.g., `system.md`, `worker.json`, `supervisor.json`) in a single `cline` call, allowing for layered instruction, and robustly captures/processes the LLM's output and associated metrics.
 
-### 3. Obtaining LLM Output and Metrics from `cline` Task Execution
+### 3. Obtaining LLM Output and Metrics from `cline` Task Execution (Implemented)
 
 #### A. Locating the Task Data
-1.  **Get Task ID**: Use `cline task list` to find the relevant task ID.
-2.  **Open Task Directory**: Use `cline task open <task_id>` to set the current task context and navigate to its directory (`~/.cline/data/tasks/<task_id>`).
-3.  **View Task Summary**: Use `cline task view` to get a concise overview of the currently open task. To manage output size, `cline task view | tail -40` can be used.
+The `execute_llm_with_cline` function now:
+1.  Executes `cline --oneshot`.
+2.  Parses the full output to extract the CLINE `task_id`.
+3.  Constructs the path to the CLINE task directory (`~/.cline/data/tasks/<task_id>`).
+4.  Verifies the existence of `api_conversation_history.json` and `metadata.json` within that directory.
 
-#### B. Extracting the JSON Response
-The LLM's full conversational output, including its structured JSON response, is typically found in `api_conversation_history.json` within the task's directory. This file can be very large.
+#### B. Extracting the JSON Response (Implemented)
+The `execute_llm_with_cline` function now:
+1.  Reads `api_conversation_history.json`.
+2.  Iterates through the messages in *reverse chronological order*.
+3.  Uses the existing `parse_llm_response` (which includes `validate_llm_response`) to extract and validate the first JSON object found within a message's "content" that conforms to `logist/schemas/llm-chat-schema.json`.
 
-**Strategy for Parsing `api_conversation_history.json`**:
-1.  **Access the File**: Read `api_conversation_history.json` from the task directory.
-2.  **Iterate for JSON**: Parse the `api_conversation_history.json` content (which is an array of messages). Iterate through the messages in *reverse chronological order* (from the latest message backwards).
-3.  **Prioritize First Valid JSON**: For each message, attempt to extract and validate any JSON object that conforms to `logist/schemas/llm-chat-schema.json`. The *first valid JSON object found* that matches the schema should be considered the agent's final structured response. This handles cases where the LLM might have conversational text around its JSON, or if it produces multiple JSON blocks in a single `api_conversation_history.json` entry.
-4.  **Use `jq` for Inspection**: When debugging manually, use `jq . api_conversation_history.json | head -30` to see the start of the file or `jq . api_conversation_history.json | tail -100` to see the end, which is more likely to contain the final response. This helps in understanding the data structure without overwhelming the context.
+#### C. Validating the Final Summary (Implemented)
+The extracted JSON response is validated against `logist/schemas/llm-chat-schema.json` as part of the `parse_llm_response` function, which is now leveraged by `execute_llm_with_cline`.
 
-#### C. Validating the Final Summary
-The extracted JSON response will be passed to existing validation functions in `logist/logist/job_processor.py`, specifically `job_processor.parse_llm_response` (which extracts JSON) and `job_processor.validate_llm_response` (which checks against `logist/schemas/llm-chat-schema.json`).
-
-#### D. Obtaining Token Usage, Cost, and Elapsed Time
-Metrics such as token upload/download counts, estimated cost, and total elapsed time for the oneshot execution can be found in `metadata.json` within the `cline` task directory. This file typically contains fields like `metrics.token_counts.input`, `metrics.token_counts.output`, `metrics.cost_usd`, and `duration_seconds`.
+#### D. Obtaining Token Usage, Cost, and Elapsed Time (Implemented)
+The `execute_llm_with_cline` function now:
+1.  Reads `metadata.json` from the CLINE task directory.
+2.  Extracts `token_counts.input`, `token_counts.output`, `cost_usd`, and `duration_seconds` (using the measured `execution_time` as a fallback for duration).
+3.  These metrics are included in the returned `processed_response` dictionary under a `metrics` key.
 
 ### 4. Early Iteration and Testing Strategy
 For early development and re-testing of `system.md` and the parsing logic:
