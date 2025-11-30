@@ -17,6 +17,9 @@ echo "=================================="
 if [ -f "venv/bin/activate" ]; then
     source venv/bin/activate
     echo "✅ Virtual environment activated"
+    # Install the logist package in editable mode so modules are discoverable
+    pip install -e .
+    echo "✅ Logist package installed in editable mode"
 else
     echo "⚠️  Virtual environment not found, using system Python"
 fi
@@ -88,6 +91,22 @@ fi
 echo "✅ Workspace directory created with working git clone"
 
 echo ""
+# Unit 7: role_list_command
+echo "📋 Unit 7: logist role list"
+ROLE_LIST_OUTPUT=$(logist role list)
+echo "$ROLE_LIST_OUTPUT"
+if ! echo "$ROLE_LIST_OUTPUT" | grep -q "Worker: Expert software development"; then
+    echo "❌ Worker role not listed or description incorrect"
+    exit 1
+fi
+if ! echo "$ROLE_LIST_OUTPUT" | grep -q "Supervisor: Quality assurance and oversight specialist"; then
+    echo "❌ Supervisor role not listed or description incorrect"
+    exit 1
+fi
+echo "✅ Role list command executed and roles verified"
+
+
+echo ""
 echo "🎉 All implemented units passed!"
 echo "✅ Virtual environment activated"
 echo "✅ Jobs directory created successfully"
@@ -95,5 +114,6 @@ echo "✅ Job created successfully"
 echo "✅ Job status command executed"
 echo "✅ Job selected successfully"
 echo "✅ Job workspace setup executed"
+echo "✅ Role list command executed and roles verified"
 echo ""
 echo "🎉 Demo script completed successfully"

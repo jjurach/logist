@@ -12,9 +12,10 @@ from click.testing import CliRunner
 from logist.cli import (
     PlaceholderJobManager,
     PlaceholderLogistEngine,
-    PlaceholderRoleManager,
+    RoleManager, # Use the real RoleManager now
     main,
 )
+import shutil # Needed for cleaning up directories
 
 
 class TestPlaceholderLogistEngine:
@@ -115,19 +116,108 @@ class TestCLICommands:
         assert "No job ID provided. Using current job:" in result.output
         assert "Status: PENDING" in result.output
 
-    def test_command_uses_provided_job_id(self):
+    def test_command_uses_provided_job_id(self, tmp_path):
         """Test that a command uses the provided ID even if a current job is set."""
-        result = self.runner.invoke(main, ["job", "status", "specific-job"])
+        jobs_dir = tmp_path / "jobs"
+        jobs_dir.mkdir()
+        
+        # Initialize jobs directory (this copies default roles)
+        self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "init"])
+        
+        # Create a dummy job
+        job_dir = tmp_path / "specific-job"
+        job_dir.mkdir()
+        self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "job", "create", str(job_dir)])
+
+        result = self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "job", "status", "specific-job"])
         assert result.exit_code == 0
         assert "No job ID provided" not in result.output
         assert "Job 'specific-job' Status:" in result.output
 
-    def test_command_fails_without_job_id_and_no_current(self, mocker):
+    def test_command_fails_without_job_id_and_no_current(self, mocker, tmp_path):
         """Test that a command fails if no job can be determined."""
+        jobs_dir = tmp_path / "jobs"
+        jobs_dir.mkdir()
+        
         mocker.patch.object(PlaceholderJobManager, "get_current_job_id", return_value=None)
-        result = self.runner.invoke(main, ["job", "status"])
+        result = self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "job", "status"])
         assert result.exit_code == 0  # click exits 0 on handled errors
         assert "No job ID provided and no current job is selected" in result.output
+
+    def test_role_list_command_after_init(self, tmp_path):
+        """Test 'logist role list' command after initialization."""
+        jobs_dir = tmp_path / "jobs"
+        jobs_dir.mkdir()
+
+        # Initialize jobs directory (this copies default roles)
+        result_init = self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "init"])
+        assert result_init.exit_code == 0
+        assert "Jobs directory initialized successfully!" in result_init.output
+
+        # List roles
+        result_list = self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "role", "list"])
+        assert result_list.exit_code == 0
+        assert "Available Agent Roles:" in result_list.output
+        assert "- Worker: Expert software development and implementation agent specializing in code generation, debugging, and technical problem-solving" in result_list.output
+        assert "- Supervisor: Quality assurance and oversight specialist focused on reviewing outputs, identifying issues, and providing constructive feedback" in result_list.output
+
+    def test_role_list_command_no_roles(self, tmp_path):
+        """Test 'logist role list' when no role files are present."""
+        jobs_dir = tmp_path / "empty_jobs"
+        jobs_dir.mkdir()
+
+        # Ensure no role files are present (init not run, or cleaned up)
+        # We don't run init here to simulate an empty state.
+
+        result_list = self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "role", "list"])
+        assert result_list.exit_code == 0
+        assert "No agent roles found." in result_list.output
+        assert "Available Agent Roles:" not in result_list.output
+
+    def test_role_list_command_malformed_role_file(self, tmp_path):
+        """Test 'logist role list' with a malformed JSON role file."""
+        jobs_dir = tmp_path / "malformed_jobs"
+        jobs_dir.mkdir()
+
+        # Initialize jobs directory to get default roles
+        self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "init"])
+
+        # Create a malformed role file
+        malformed_path = jobs_dir / "malformed_role.json"
+        malformed_path.write_text("{'name': 'BadRole', 'description': 'This is not valid JSON")
+
+        result_list = self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "role", "list"])
+        assert result_list.exit_code == 0
+        assert "Warning: Skipping malformed JSON role file 'malformed_role.json'." in result_list.output
+        assert "- Worker:" in result_list.output # Should still list valid roles
+        assert "- Supervisor:" in result_list.output # Should still list valid roles
+        assert "BadRole" not in result_list.output # Malformed role should not be listed
+
+    def test_role_list_command_custom_role(self, tmp_path):
+        """Test 'logist role list' with a custom role file."""
+        jobs_dir = tmp_path / "custom_jobs"
+        jobs_dir.mkdir()
+
+        # Initialize jobs directory (to get default roles)
+        self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "init"])
+
+        # Create a custom role file
+        custom_role_path = jobs_dir / "analyst.json"
+        custom_role_content = {
+            "name": "Analyst",
+            "description": "Data analysis and reporting specialist.",
+            "instructions": "You are a data analyst...",
+            "llm_model": "gemini-2.5-flash"
+        }
+        with open(custom_role_path, 'w') as f:
+            json.dump(custom_role_content, f)
+
+        result_list = self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "role", "list"])
+        assert result_list.exit_code == 0
+        assert "Available Agent Roles:" in result_list.output
+        assert "- Worker:" in result_list.output
+        assert "- Supervisor:" in result_list.output
+        assert "- Analyst: Data analysis and reporting specialist." in result_list.output
 
 
 # Integration test for CLI installation

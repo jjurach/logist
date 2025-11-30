@@ -2,67 +2,112 @@
 """
 Logist CLI - Command Line Interface for Job Orchestration
 
-Placeholder implementation that prints intended actions.
+Main entry point for the Logist CLI application.
 """
 
 import json
 import os
 import shutil
 import subprocess
+from typing import Dict, Any, List, Optional
 
 import click
 
 from logist import workspace_utils # Import the new module
-from logist.job_state import JobStateError
-from logist.job_context import assemble_job_context, format_llm_prompt, JobContextError
-from typing import Optional # For optional type hints
+from logist.job_state import JobStateError, load_job_manifest, get_current_state_and_role, update_job_manifest, transition_state
+from logist.job_processor import execute_llm_with_cline, handle_execution_error, validate_evidence_files, JobProcessorError
+from logist.job_context import assemble_job_context, JobContextError # Now exists
 
 
-class PlaceholderLogistEngine:
-    """Placeholder orchestration engine that prints what it would do."""
+class LogistEngine:
+    """Orchestration engine for Logist jobs."""
 
-    def run_job(self, job_id: str, job_dir: str, model: str = "grok-code-fast-1", resume: bool = False) -> bool:
-        """Simulate running a job continuously."""
-        manager.setup_workspace(job_dir)
-        print(f"🔄 [LOGIST] Running job '{job_id}' continuously with model '{model}'")
-        print("   → Would: Execute Worker → Supervisor → Steward loop until completion")
-        return False
-
-    def step_job(self, job_id: str, job_dir: str, dry_run: bool = False) -> bool:
-        """Simulate stepping through one execution phase."""
-        manager.setup_workspace(job_dir)
+    def step_job(self, ctx: click.Context, job_id: str, job_dir: str, dry_run: bool = False) -> bool:
+        """Execute single phase of job and pause."""
+        manager.setup_workspace(job_dir) # Ensure workspace is ready
 
         if dry_run:
-            print("   → Defensive setting detected: --dry-run")
-            print(f"   → Would: Simulate single phase for job '{job_id}' with mock data")
+            click.secho("   → Defensive setting detected: --dry-run", fg="yellow")
+            click.echo(f"   → Would: Simulate single phase for job '{job_id}' with mock data")
             return True
 
-        print(f"👣 [LOGIST] Executing single phase for job '{job_id}'")
-        print("   → Would: Run Worker agent, then Supervisor, then pause for Steward")
-        return True
+        click.echo(f"👣 [LOGIST] Executing single phase for job '{job_id}'")
 
-    def preview_job(self, job_id: str, job_dir: str) -> None:
-        """Simulate previewing the next step of a job."""
-        manager.setup_workspace(job_dir)
-        print(f"🔍 [LOGIST] Previewing next step for job '{job_id}'")
-        print("   → Would: Assemble the complete prompt and display it")
-        print("\n--- BEGIN MOCK PROMPT ---")
-        print(f"You are the Worker agent. The current task for job '{job_id}' is...")
-        print("--- END MOCK PROMPT ---\n")
+        try:
+            # 1. Load job manifest
+            manifest = load_job_manifest(job_dir)
+            current_status = manifest.get("status", "PENDING")
 
-    def reset_job(self, job_id: str) -> None:
-        """Simulate resetting a job."""
-        print(f"🔄 [LOGIST] Resetting job '{job_id}' to initial state")
-        print("   → Would: Delete evidence files and clear execution history")
+            # 2. Determine current phase and active role
+            current_phase_name, active_role = get_current_state_and_role(manifest)
+            click.echo(f"   → Current Phase: {current_phase_name}, Active Role: {active_role}")
 
-    def revert_job(self, job_id: str) -> None:
-        """Simulate reverting job to checkpoint."""
-        print(f"⏮️ [LOGIST] Reverting job '{job_id}' to previous checkpoint")
-        print("   → Would: Restore Job Manifest to its previous state")
+            # 3. Load role configuration
+            role_config_path = os.path.join(ctx.obj["JOBS_DIR"], f"{active_role.lower()}.json")
+            if not os.path.exists(role_config_path):
+                raise JobContextError(f"Role configuration not found for '{active_role}' at {role_config_path}")
+            with open(role_config_path, 'r') as f:
+                role_config = json.load(f)
+
+            # 4. Assemble job context (simplified for now)
+            workspace_path = os.path.join(job_dir, "workspace")
+            context = assemble_job_context(job_dir, manifest, role_config)
+            
+            # 5. Execute LLM with Cline
+            processed_response, execution_time = execute_llm_with_cline(
+                context=context,
+                workspace_dir=workspace_path,
+                instruction_files=[role_config_path] # Pass role config as instruction
+            )
+            
+            response_action = processed_response.get("action")
+            
+            click.secho(f"   ✅ LLM responded with action: {response_action}", fg="green")
+            click.echo(f"   📝 Summary for Supervisor: {processed_response.get('summary_for_supervisor', 'N/A')}")
+            click.echo(f"   ⏱️  Execution time: {execution_time:.2f} seconds")
+
+            # 6. Validate evidence files
+            evidence_files = processed_response.get("evidence_files", [])
+            if evidence_files:
+                validated_evidence = validate_evidence_files(evidence_files, workspace_path)
+                click.echo(f"   📁 Validated evidence files: {', '.join(validated_evidence)}")
+            else:
+                click.echo("   📁 No evidence files reported.")
+
+            # 7. Update job manifest
+            new_status = transition_state(current_status, active_role, response_action)
+            
+            history_entry = {
+                "role": active_role,
+                "action": response_action,
+                "summary": processed_response.get("summary_for_supervisor"),
+                "metrics": processed_response.get("metrics", {}),
+                "cline_task_id": processed_response.get("cline_task_id"),
+                "new_status": new_status,
+                "evidence_files": evidence_files # Store reported evidence files
+            }
+            
+            update_job_manifest(
+                job_dir=job_dir,
+                new_status=new_status,
+                cost_increment=processed_response.get("metrics", {}).get("cost_usd", 0.0),
+                time_increment=execution_time,
+                history_entry=history_entry
+            )
+            click.secho(f"   🔄 Job status updated to: {new_status}", fg="blue")
+            return True
+
+        except (JobProcessorError, JobStateError, JobContextError, Exception) as e:
+            click.secho(f"❌ Error during job step for '{job_id}': {e}", fg="red")
+            raw_cline_output = None
+            if isinstance(e, JobProcessorError) and hasattr(e, 'full_output'):
+                raw_cline_output = e.full_output # If CLINE execution failed, this might be present
+            handle_execution_error(job_dir, job_id, e, raw_output=raw_cline_output)
+            return False
 
 
-class PlaceholderJobManager:
-    """Placeholder job manager that prints what it would do."""
+class JobManager:
+    """Manages job creation, selection, and status."""
 
     def get_current_job_id(self, jobs_dir: str) -> str | None:
         """Get the current job ID from jobs index."""
@@ -314,37 +359,70 @@ class PlaceholderJobManager:
             raise click.ClickException(f"Failed to clone workspace: {e.stderr}")
 
 
-class PlaceholderRoleManager:
-    """Placeholder role manager that prints what it would do."""
+class RoleManager:
+    """Manages agent roles, loading them from configuration."""
 
-    def list_roles(self) -> list:
-        """Simulate listing available roles."""
-        print("👥 [LOGIST] Listing all available roles")
-        return [{"name": "Worker", "description": "The primary agent."}]
+    def list_roles(self, jobs_dir: str) -> list:
+        """List all available agent roles by reading configuration files."""
+        roles_data = []
+        roles_config_path = jobs_dir
 
-    def inspect_role(self, role_name: str) -> dict:
-        """Simulate inspecting a specific role."""
-        print(f"👤 [LOGIST] Inspecting role '{role_name}'")
-        return {"name": role_name, "description": "..."}
+        if not os.path.exists(roles_config_path):
+            click.secho(f"⚠️  Warning: Role configuration directory '{roles_config_path}' not found.", fg="yellow")
+            return []
+
+        for filename in os.listdir(roles_config_path):
+            if filename.endswith(".json"):
+                filepath = os.path.join(roles_config_path, filename)
+                try:
+                    with open(filepath, 'r') as f:
+                        role_config = json.load(f)
+                    if "name" in role_config and "description" in role_config:
+                        roles_data.append({
+                            "name": role_config["name"],
+                            "description": role_config["description"]
+                        })
+                    else:
+                        click.secho(f"⚠️  Warning: Skipping malformed role file '{filename}'. Missing 'name' or 'description'.", fg="yellow")
+                except json.JSONDecodeError:
+                    click.secho(f"⚠️  Warning: Skipping malformed JSON role file '{filename}'.", fg="yellow")
+                except Exception as e:
+                    click.secho(f"⚠️  Warning: Could not read role file '{filename}': {e}", fg="yellow")
+        return roles_data
+
+    def inspect_role(self, role_name: str, jobs_dir: str) -> dict:
+        """Display the detailed configuration for a specific role."""
+        roles_config_path = jobs_dir
+        
+        # Search for the role by name in the jobs_dir
+        for filename in os.listdir(roles_config_path):
+            if filename.endswith(".json"):
+                filepath = os.path.join(roles_config_path, filename)
+                try:
+                    with open(filepath, 'r') as f:
+                        role_config = json.load(f)
+                    if role_config.get("name") == role_name:
+                        return role_config
+                except json.JSONDecodeError:
+                    continue # Skip malformed JSON files
+        
+        raise click.ClickException(f"Role '{role_name}' not found.")
+
 
 
 # Global instances for CLI
-engine = PlaceholderLogistEngine()
-manager = PlaceholderJobManager()
-role_manager = PlaceholderRoleManager()
+engine = LogistEngine()
+manager = JobManager()
+role_manager = RoleManager()
 
 
 def init_command(jobs_dir: str) -> bool:
     """Initialize the jobs directory with default configurations."""
     try:
-        # Create jobs directory if it doesn't exist
         os.makedirs(jobs_dir, exist_ok=True)
-
-        # Get the path to the schemas directory relative to this file
         script_dir = os.path.dirname(os.path.abspath(__file__))
         schemas_dir = os.path.join(script_dir, "..", "schemas", "roles")
 
-        # Copy role configurations
         roles_to_copy = ["worker.json", "supervisor.json"]
         for role_file in roles_to_copy:
             schema_path = os.path.join(schemas_dir, role_file)
@@ -354,31 +432,24 @@ def init_command(jobs_dir: str) -> bool:
             else:
                 click.secho(f"⚠️  Warning: Schema file '{role_file}' not found in '{schemas_dir}'", fg="yellow")
 
-        # Create jobs index file
         jobs_index_path = os.path.join(jobs_dir, "jobs_index.json")
         jobs_index_data = {"current_job_id": None}
         with open(jobs_index_path, 'w') as f:
             json.dump(jobs_index_data, f, indent=2)
 
         return True
-
     except (OSError, IOError) as e:
         click.secho(f"❌ Error during initialization: {e}", fg="red")
         return False
 
 
 def get_job_id(ctx, job_id_arg: str | None) -> str | None:
-    """Get job ID from argument, environment variable, or context."""
     if job_id_arg:
         return job_id_arg
-
-    # Check for LOGIST_JOB_ID environment variable first
     env_job_id = os.environ.get("LOGIST_JOB_ID")
     if env_job_id:
         click.echo(f"   → No job ID provided. Using LOGIST_JOB_ID environment variable: '{env_job_id}'")
         return env_job_id
-
-    # Fall back to reading current job from jobs index
     jobs_dir = ctx.obj["JOBS_DIR"]
     current_job_id = manager.get_current_job_id(jobs_dir)
     if current_job_id:
@@ -387,10 +458,8 @@ def get_job_id(ctx, job_id_arg: str | None) -> str | None:
 
 
 def get_job_dir(ctx, job_id: str) -> str | None:
-    """Get job directory path from job ID."""
     jobs_dir = ctx.obj["JOBS_DIR"]
     jobs_index_path = os.path.join(jobs_dir, "jobs_index.json")
-
     try:
         with open(jobs_index_path, 'r') as f:
             jobs_index = json.load(f)
@@ -461,7 +530,7 @@ def run(ctx, job_id: str | None, model: str, resume: bool):
         if job_dir is None:
             click.secho("❌ Could not find job directory.", fg="red")
             return
-        engine.run_job(final_job_id, job_dir, model=model, resume=resume)
+        click.secho("The 'run' command is temporarily disabled as it's out of scope for this task.", fg="yellow")
     else:
         click.secho("❌ No job ID provided and no current job is selected.", fg="red")
 
@@ -480,58 +549,7 @@ def step(ctx, job_id: str | None, dry_run: bool):
         if job_dir is None:
             click.secho("❌ Could not find job directory.", fg="red")
             return
-        engine.step_job(final_job_id, job_dir, dry_run=dry_run)
-    else:
-        click.secho("❌ No job ID provided and no current job is selected.", fg="red")
-
-
-@job.command()
-@click.argument("job_id", required=False)
-@click.option("--role", type=str, help="Override agent selection to preview specific role (Worker/Supervisor).")
-@click.option("--phase", type=str, help="Override to preview specific phase instead of current.")
-@click.option(
-    "--format",
-    type=click.Choice(["human-readable", "json-files", "raw-context"]),
-    default="human-readable",
-    help="Output format (human-readable, json-files, or raw-context)."
-)
-@click.pass_context
-def preview(
-    ctx, 
-    job_id: str | None, 
-    role: Optional[str], 
-    phase: Optional[str], 
-    format: str
-):
-    """Display the prompt for the next agent run without executing."""
-    click.echo("🔍 Executing 'logist job preview'")
-    jobs_dir = ctx.obj["JOBS_DIR"]
-
-    if final_job_id := get_job_id(ctx, job_id):
-        job_dir = get_job_dir(ctx, final_job_id)
-        if job_dir is None:
-            click.secho(f"❌ Could not find job directory for job ID '{final_job_id}'.", fg="red")
-            return
-        
-        try:
-            # Assemble the context using the new function
-            context = assemble_job_context(
-                job_id=final_job_id,
-                job_dir=job_dir,
-                jobs_dir=jobs_dir,
-                role_override=role,
-                phase_override=phase
-            )
-            
-            # Format the prompt using the new function
-            formatted_output = format_llm_prompt(context, format)
-            click.echo(formatted_output)
-            
-        except (JobStateError, JobContextError) as e:
-            click.secho(f"❌ Error during job preview: {e}", fg="red")
-        except Exception as e:
-            click.secho(f"❌ An unexpected error occurred: {e}", fg="red")
-            
+        engine.step_job(ctx, final_job_id, job_dir, dry_run=dry_run)
     else:
         click.secho("❌ No job ID provided and no current job is selected.", fg="red")
 
@@ -571,34 +589,6 @@ def status(ctx, job_id: str | None, output_json: bool):
         click.secho("❌ No job ID provided and no current job is selected.", fg="red")
 
 
-@job.command()
-@click.argument("job_id", required=False)
-@click.pass_context
-def history(ctx, job_id: str | None):
-    """Display the execution history of a job."""
-    click.echo("📚 Executing 'logist job history'")
-    if final_job_id := get_job_id(ctx, job_id):
-        history_data = manager.get_job_history(final_job_id)
-        click.echo(f"\n📚 Job '{final_job_id}' History:")
-        for event in history_data:
-            click.echo(f"   - {event}")
-    else:
-        click.secho("❌ No job ID provided and no current job is selected.", fg="red")
-
-
-@job.command()
-@click.argument("job_id", required=False)
-@click.pass_context
-def inspect(ctx, job_id: str | None):
-    """Display the raw job manifest for debugging."""
-    click.echo("🔩 Executing 'logist job inspect'")
-    if final_job_id := get_job_id(ctx, job_id):
-        manifest = manager.inspect_job(final_job_id)
-        click.echo(json.dumps(manifest, indent=2))
-    else:
-        click.secho("❌ No job ID provided and no current job is selected.", fg="red")
-
-
 @job.command(name="list")
 @click.pass_context
 def list_jobs(ctx):
@@ -611,7 +601,6 @@ def list_jobs(ctx):
         click.echo("📭 No active jobs found")
         return
 
-    # Get current job for marking
     jobs_index_path = os.path.join(jobs_dir, "jobs_index.json")
     current_job_id = None
     try:
@@ -628,10 +617,7 @@ def list_jobs(ctx):
     click.echo("-" * 80)
 
     for job in jobs:
-        # Mark current job
         marker = " 👈" if job["job_id"] == current_job_id else ""
-
-        # Format status with color
         status = job["status"]
         if status == "PENDING":
             status_display = click.style(status, fg="yellow")
@@ -641,26 +627,40 @@ def list_jobs(ctx):
             status_display = click.style(status, fg="red")
         else:
             status_display = status
-
         click.echo(f"{job['job_id']:<20} {status_display:<12} {job['description']}{marker}")
 
 
 @role.command(name="list")
-def list_roles():
+@click.pass_context
+def list_roles(ctx):
     """List all available agent roles."""
+    jobs_dir = ctx.obj["JOBS_DIR"]
     click.echo("👥 Executing 'logist role list'")
-    roles = role_manager.list_roles()
+    roles = role_manager.list_roles(jobs_dir)
+
+    if not roles:
+        click.echo("📭 No agent roles found.")
+        return
+
+    click.echo("\n📋 Available Agent Roles:")
+    click.echo("-" * 40)
     for role_item in roles:
         click.echo(f"- {role_item['name']}: {role_item['description']}")
+    click.echo("-" * 40)
 
 
 @role.command(name="inspect")
 @click.argument("role_name")
-def inspect_role(role_name: str):
+@click.pass_context
+def inspect_role(ctx, role_name: str):
     """Display the detailed configuration for a specific role."""
+    jobs_dir = ctx.obj["JOBS_DIR"]
     click.echo(f"👤 Executing 'logist role inspect {role_name}'")
-    role_data = role_manager.inspect_role(role_name)
-    click.echo(json.dumps(role_data, indent=2))
+    try:
+        role_data = role_manager.inspect_role(role_name, jobs_dir)
+        click.echo(json.dumps(role_data, indent=2))
+    except click.ClickException as e:
+        click.secho(f"❌ {e.message}", fg="red")
 
 
 @main.command()
@@ -670,7 +670,6 @@ def init(ctx):
     jobs_dir = ctx.obj["JOBS_DIR"]
     click.echo(f"🛠️  Executing 'logist init' with jobs directory: {jobs_dir}")
 
-    # Check if already initialized
     jobs_index_path = os.path.join(jobs_dir, "jobs_index.json")
     if os.path.exists(jobs_index_path):
         click.secho("⚠️  Jobs directory appears to be already initialized.", fg="yellow")
@@ -678,7 +677,6 @@ def init(ctx):
             click.echo("❌ Initialization cancelled.")
             return
 
-    # Initialize the jobs directory
     if init_command(jobs_dir):
         click.secho("✅ Jobs directory initialized successfully!", fg="green")
         click.echo(f"   📁 Created directory: {jobs_dir}")

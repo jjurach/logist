@@ -113,6 +113,25 @@ def execute_llm_with_cline(
     start_time = time.time()
 
     try:
+        # TEMPORARY: Simulate an error for testing purposes
+        # raise JobProcessorError("Simulated CLINE execution failure for testing.")
+        # To test subprocess failure:
+        # process = subprocess.run(
+        #     ["false"], # command that always fails
+        #     cwd=cwd_dir,
+        #     capture_output=True,
+        #     text=True,
+        #     timeout=timeout,
+        #     check=True # this makes it raise CalledProcessError
+        # )
+        # To test invalid JSON:
+        # with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+        #     f.write("THIS IS NOT JSON")
+        #     prompt_file = f.name
+        #     cmd = ["cat", prompt_file] # command that outputs non-json
+        #     process = subprocess.run(cmd, capture_output=True, text=True)
+
+
         # Format the context as a human-readable prompt
         from logist.job_context import format_llm_prompt
         prompt = format_llm_prompt(context, "human-readable")
@@ -280,3 +299,40 @@ def validate_evidence_files(evidence_files: List[str], workspace_dir: str) -> Li
         validated_files.append(rel_path)
 
     return validated_files
+
+
+def handle_execution_error(job_dir: str, job_id: str, error: Exception, raw_output: str = None) -> None:
+    """
+    Handles an execution error, updates job manifest to INTERVENTION_REQUIRED,
+    and logs the error.
+
+    Args:
+        job_dir: The absolute path to the job's directory.
+        job_id: The ID of the job.
+        error: The exception object that occurred.
+        raw_output: Optional raw output from the failing process for debugging.
+    """
+    from logist.job_state import update_job_manifest
+    from datetime import datetime
+    import click # For logging to console
+
+    error_message = str(error)
+    click.secho(f"❌ Error during job '{job_id}' execution: {error_message}", fg="red")
+
+    history_entry = {
+        "event": "ERROR",
+        "description": f"Execution failed: {error_message}",
+        "details": f"Error Type: {type(error).__name__}",
+        "raw_output": raw_output if raw_output else "No raw output available."
+    }
+
+    try:
+        updated_manifest = update_job_manifest(
+            job_dir=job_dir,
+            new_status="INTERVENTION_REQUIRED",
+            history_entry=history_entry
+        )
+        click.secho(f"⚠️ Job '{job_id}' status updated to INTERVENTION_REQUIRED.", fg="yellow")
+    except Exception as e:
+        click.secho(f"Critical error: Failed to update manifest for job '{job_id}' after an execution error: {e}", fg="red")
+        click.secho(f"Original error for job '{job_id}': {error_message}", fg="red")
