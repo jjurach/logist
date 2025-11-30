@@ -5,15 +5,15 @@ This document outlines the ordered implementation of Logist's core features in s
 ## 📊 Phase 0: Research & Prototyping
 
 ### 0. json_validation_unit
-**Description:** Develop JSON schema validation infrastructure for LLM response processing
-**Objective:** Implement robust parsing and validation of LLM JSON responses according to logist/schemas/llm-chat-schema.json, develop system instructions requiring valid schema compliance, create error handling that escalates schema violations to INTERVENTION_REQUIRED with descriptive failure information
-**Scope:** Create validation wrapper functions, integrate schema enforcement in response processing, document system prompt additions for reliable JSON output from LLMs, implement descriptive error messaging on validation failures
+**Description:** Develop JSON schema validation infrastructure for LLM response processing with demonstration assets
+**Objective:** Implement robust parsing and validation of LLM JSON responses according to logist/schemas/llm-chat-schema.json for bidirectional communication, develop system instructions requiring valid schema compliance, create error handling that escalates schema violations to INTERVENTION_REQUIRED with descriptive failure information
+**Scope:** Choose jsonschema library and add to requirements.txt, create validation wrapper functions, integrate schema enforcement for both requests (logist→LLM) and responses (LLM→logist), document system prompt additions for reliable JSON output from LLMs, implement descriptive error messaging on validation failures, provide demo script and example JSON files for validation testing
 **Dependencies:** None
-**Files (Read):** logist/schemas/llm-chat-schema.json, LLM response outputs
-**Files (Write):** JSON validation utilities, system instruction templates with schema requirements, validation test cases
-**Verification:** Consistent validation of COMPLETED/STUCK/RETRY responses, clear error messages on malformed outputs, validated test responses escalation to appropriate state transitions
-**Dependency Metadata:** Provides validation foundation enabling reliable response processing in Phase 3.9 (job_poststep_command)
-**Testing Notes:** Test with deliberately malformed JSON responses to verify escalation to INTERVENTION_REQUIRED; validate system instructions produce compliant outputs
+**Files (Read):** logist/schemas/llm-chat-schema.json, LLM response outputs, example JSON files in logist/docs/examples/llm-exchange/
+**Files (Write):** requirements.txt (jsonschema dependency), system instruction templates with schema requirements, JSON validation utilities with wrapper functions, logist/scripts/demo-schema.py validation demonstration script, logist/docs/examples/llm-exchange/ (*.json example files), logist/docs/prompts/01-json_validation_unit.md controlling prompt file
+**Verification:** Consistent validation of COMPLETED/STUCK/RETRY responses, descriptive error messages on malformed inputs/outputs, demo script successfully processes valid and rejects invalid example files, system instructions clearly specify JSON schema compliance for bidirection communication
+**Dependency Metadata:** Provides validation foundation enabling reliable response processing in Phase 3.9 (job_poststep_command); establishes library selection and demo patterns for future validation units
+**Testing Notes:** Comprehensive unit tests for valid/invalid JSON responses showing pass/fail; demo script integrated into testing suite; deliberate malformed JSON responses tested for correct escalation to INTERVENTION_REQUIRED; validate system instructions produce compliant LLM outputs through demo executions
 
 ### 0. oneshot_research_unit
 **Description:** Research iterative construction of interface for starting, monitoring, and parsing Cline oneshot execution outputs

@@ -1,0 +1,8 @@
+{
+  "response": {
+    "action": "COMPLETED",
+    "evidence_files": ["task.txt", "output.log"],
+    "summary_for_supervisor": "Task completed successfully - analysis shows 100% accuracy.",
+    "job_manifest_url": "https://example.com/manifest.json"
+  }
+}

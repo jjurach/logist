@@ -1,0 +1,7 @@
+{
+  "request": {
+    "action": "step",
+    "job_id": "demo-job",
+    "options": {"resume": false, "model": "gpt-4"}
+  }
+}
