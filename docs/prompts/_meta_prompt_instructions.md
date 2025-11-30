@@ -14,9 +14,10 @@ Update this prompt file to reflect completed deliverables and any deviations:
 - Update deliverables section with actual files created
 - Document any implementation decisions or design changes
 - Note any prerequisites that proved incomplete or incorrect
+- Document the completion date at the bottom of the file
 
-### 3. Move to Completed
-Move this file from `docs/prompts/` to `docs/completed/`:
+### 3. Move to Completed Directory
+Move this file from `docs/prompts/` to `docs/completed/` and prepare for commit:
 ```bash
 cd /home/phaedrus/AiSpace/logist
 mv docs/prompts/XX-task_name.md docs/completed/
