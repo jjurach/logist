@@ -8,21 +8,39 @@ Placeholder implementation that prints intended actions.
 import json
 import os
 import shutil
+import subprocess
 
 import click
+
+
+def find_git_root(cwd=None):
+    """Find the root directory of the Git repository from the current working directory."""
+    if cwd is None:
+        cwd = os.getcwd()
+
+    original = cwd
+    while cwd != os.path.dirname(cwd):
+        if os.path.isdir(os.path.join(cwd, '.git')):
+            return cwd
+        cwd = os.path.dirname(cwd)
+
+    return None
 
 
 class PlaceholderLogistEngine:
     """Placeholder orchestration engine that prints what it would do."""
 
-    def run_job(self, job_id: str, model: str = "gpt-4", resume: bool = False) -> bool:
+    def run_job(self, job_id: str, job_dir: str, model: str = "gpt-4", resume: bool = False) -> bool:
         """Simulate running a job continuously."""
+        manager.setup_workspace(job_dir)
         print(f"🔄 [LOGIST] Running job '{job_id}' continuously with model '{model}'")
         print("   → Would: Execute Worker → Supervisor → Steward loop until completion")
         return False
 
-    def step_job(self, job_id: str, dry_run: bool = False) -> bool:
+    def step_job(self, job_id: str, job_dir: str, dry_run: bool = False) -> bool:
         """Simulate stepping through one execution phase."""
+        manager.setup_workspace(job_dir)
+
         if dry_run:
             print("   → Defensive setting detected: --dry-run")
             print(f"   → Would: Simulate single phase for job '{job_id}' with mock data")
@@ -32,8 +50,9 @@ class PlaceholderLogistEngine:
         print("   → Would: Run Worker agent, then Supervisor, then pause for Steward")
         return True
 
-    def preview_job(self, job_id: str) -> None:
+    def preview_job(self, job_id: str, job_dir: str) -> None:
         """Simulate previewing the next step of a job."""
+        manager.setup_workspace(job_dir)
         print(f"🔍 [LOGIST] Previewing next step for job '{job_id}'")
         print("   → Would: Assemble the complete prompt and display it")
         print("\n--- BEGIN MOCK PROMPT ---")
@@ -274,6 +293,35 @@ class PlaceholderJobManager:
         """Simulate terminating a job."""
         print(f"🛑 [LOGIST] Terminating job '{job_id}' workflow")
 
+    def setup_workspace(self, job_dir: str) -> None:
+        """Setup isolated workspace by cloning local Git repository."""
+        workspace_dir = os.path.join(job_dir, "workspace")
+        workspace_git = os.path.join(workspace_dir, ".git")
+
+        git_root = find_git_root()
+        if git_root is None:
+            raise click.ClickException("Not in a Git repository. Cannot setup workspace.")
+
+        if os.path.exists(workspace_git):
+            # Assume valid workspace exists
+            return
+
+        if os.path.exists(workspace_dir):
+            shutil.rmtree(workspace_dir)
+
+        os.makedirs(job_dir, exist_ok=True)
+
+        try:
+            subprocess.run(
+                ["git", "clone", git_root, "workspace"],
+                cwd=job_dir,
+                check=True,
+                capture_output=True,
+                text=True
+            )
+        except subprocess.CalledProcessError as e:
+            raise click.ClickException(f"Failed to clone workspace: {e.stderr}")
+
 
 class PlaceholderRoleManager:
     """Placeholder role manager that prints what it would do."""
@@ -347,6 +395,19 @@ def get_job_id(ctx, job_id_arg: str | None) -> str | None:
     return current_job_id
 
 
+def get_job_dir(ctx, job_id: str) -> str | None:
+    """Get job directory path from job ID."""
+    jobs_dir = ctx.obj["JOBS_DIR"]
+    jobs_index_path = os.path.join(jobs_dir, "jobs_index.json")
+
+    try:
+        with open(jobs_index_path, 'r') as f:
+            jobs_index = json.load(f)
+        return jobs_index["jobs"].get(job_id)
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
 @click.group()
 @click.version_option(version="0.1.0", prog_name="logist")
 @click.option(
@@ -405,7 +466,11 @@ def run(ctx, job_id: str | None, model: str, resume: bool):
     """Execute a job continuously until completion."""
     click.echo("🎯 Executing 'logist job run'")
     if final_job_id := get_job_id(ctx, job_id):
-        engine.run_job(final_job_id, model=model, resume=resume)
+        job_dir = get_job_dir(ctx, final_job_id)
+        if job_dir is None:
+            click.secho("❌ Could not find job directory.", fg="red")
+            return
+        engine.run_job(final_job_id, job_dir, model=model, resume=resume)
     else:
         click.secho("❌ No job ID provided and no current job is selected.", fg="red")
 
@@ -420,7 +485,11 @@ def step(ctx, job_id: str | None, dry_run: bool):
     """Execute single phase of job and pause."""
     click.echo("👣 Executing 'logist job step'")
     if final_job_id := get_job_id(ctx, job_id):
-        engine.step_job(final_job_id, dry_run=dry_run)
+        job_dir = get_job_dir(ctx, final_job_id)
+        if job_dir is None:
+            click.secho("❌ Could not find job directory.", fg="red")
+            return
+        engine.step_job(final_job_id, job_dir, dry_run=dry_run)
     else:
         click.secho("❌ No job ID provided and no current job is selected.", fg="red")
 
@@ -432,7 +501,11 @@ def preview(ctx, job_id: str | None):
     """Display the prompt for the next agent run without executing."""
     click.echo("🔍 Executing 'logist job preview'")
     if final_job_id := get_job_id(ctx, job_id):
-        engine.preview_job(final_job_id)
+        job_dir = get_job_dir(ctx, final_job_id)
+        if job_dir is None:
+            click.secho("❌ Could not find job directory.", fg="red")
+            return
+        engine.preview_job(final_job_id, job_dir)
     else:
         click.secho("❌ No job ID provided and no current job is selected.", fg="red")
 

@@ -74,6 +74,26 @@ if [ "$CURRENT_JOB" != "my-first-job" ]; then
 fi
 echo "✅ Job selected successfully"
 
+# Unit 6: isolation_env_setup
+echo "📋 Unit 6: isolation_env_setup workspace creation"
+logist job step my-first-job --dry-run  # Use --dry-run to test setup without execution
+if [ ! -d "$DEMO_DIR/my-first-job/workspace" ]; then
+    echo "❌ Workspace directory not created"
+    exit 1
+fi
+if [ ! -d "$DEMO_DIR/my-first-job/workspace/.git" ]; then
+    echo "❌ Workspace is not a valid git repository"
+    exit 1
+fi
+echo "✅ Workspace directory created with working git clone"
+
 echo ""
 echo "🎉 All implemented units passed!"
-echo "✅ Demo script completed successfully"
+echo "✅ Virtual environment activated"
+echo "✅ Jobs directory created successfully"
+echo "✅ Job created successfully"
+echo "✅ Job status command executed"
+echo "✅ Job selected successfully"
+echo "✅ Job workspace setup executed"
+echo ""
+echo "🎉 Demo script completed successfully"
