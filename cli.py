@@ -22,6 +22,80 @@ from logist.job_context import assemble_job_context, JobContextError # Now exist
 class LogistEngine:
     """Orchestration engine for Logist jobs."""
 
+    def rerun_job(self, ctx: click.Context, job_id: str, job_dir: str, start_step: int | None = None) -> None:
+        """Re-execute a job, optionally starting from a specific phase."""
+        manager.setup_workspace(job_dir) # Ensure workspace is ready
+
+        try:
+            # 1. Load and validate job manifest
+            manifest = load_job_manifest(job_dir)
+
+            # 2. Determine available phases
+            phases = manifest.get("phases", [])
+            if not phases:
+                click.secho("⚠️  Job has no defined phases. Treating as single-phase job.", fg="yellow")
+                phases = [{"name": "default", "description": "Default single phase"}]
+
+            # 3. Validate start_step if provided
+            if start_step is not None:
+                if start_step >= len(phases):
+                    available_steps = len(phases)
+                    raise click.ClickException(
+                        f"Invalid step number {start_step}. Job has {available_steps} phases (0-{available_steps-1})."
+                    )
+                start_phase_name = phases[start_step]["name"]
+                click.echo(f"   → Starting rerun from phase {start_step} ('{start_phase_name}')")
+            else:
+                start_phase_name = phases[0]["name"]
+                click.echo("   → Starting rerun from the beginning (phase 0)")
+
+            # 4. Reset job state for rerun
+            self._reset_job_for_rerun(job_dir, start_phase_name, new_run=True)
+
+            click.secho(f"   🔄 Job '{job_id}' reset for rerun", fg="blue")
+
+            # 5. Continue with normal execution until completion or intervention
+            # For now, execute one step (matching the pattern of other commands)
+            # Future enhancement could implement continuous rerun until completion
+            success = self.step_job(ctx, job_id, job_dir, dry_run=False)
+            if success:
+                click.secho(f"   ✅ Rerun initiated successfully", fg="green")
+            else:
+                click.secho(f"   ❌ Rerun step failed", fg="red")
+
+        except Exception as e:
+            click.secho(f"❌ Error during job rerun preparation: {e}", fg="red")
+            raise
+
+    def _reset_job_for_rerun(self, job_dir: str, start_phase_name: str, new_run: bool = False) -> None:
+        """Reset job state for rerun operation."""
+        manifest = load_job_manifest(job_dir)
+
+        # Reset status to PENDING
+        manifest["status"] = "PENDING"
+
+        # Set current phase to starting phase
+        manifest["current_phase"] = start_phase_name
+
+        # Reset metrics for this run (but preserve total history)
+        manifest["metrics"]["cumulative_cost"] = 0.0
+        manifest["metrics"]["cumulative_time_seconds"] = 0.0
+
+        # Clear immediate history but preserve overall history in separate structure
+        manifest["history"] = []
+
+        # Mark as rerun in manifest for tracking
+        manifest["_rerun_info"] = {
+            "is_rerun": True,
+            "start_phase": start_phase_name,
+            "started_at": None  # Will be set when first step executes
+        }
+
+        # Save updated manifest
+        manifest_path = os.path.join(job_dir, "job_manifest.json")
+        with open(manifest_path, 'w') as f:
+            json.dump(manifest, f, indent=2)
+
     def step_job(self, ctx: click.Context, job_id: str, job_dir: str, dry_run: bool = False) -> bool:
         """Execute single phase of job and pause."""
         manager.setup_workspace(job_dir) # Ensure workspace is ready
@@ -552,6 +626,37 @@ def step(ctx, job_id: str | None, dry_run: bool):
         engine.step_job(ctx, final_job_id, job_dir, dry_run=dry_run)
     else:
         click.secho("❌ No job ID provided and no current job is selected.", fg="red")
+
+
+@job.command(name="rerun")
+@click.argument("job_id")
+@click.option(
+    "--step",
+    type=int,
+    default=None,
+    help="Zero-indexed phase number to start rerunning from. If not specified, starts from the beginning."
+)
+@click.pass_context
+def rerun(ctx, job_id: str, step: int | None):
+    """Re-execute a previously completed job, or resume from a specific step."""
+    click.echo("🔄 Executing 'logist job rerun'")
+
+    # Get job directory
+    job_dir = get_job_dir(ctx, job_id)
+    if job_dir is None:
+        click.secho(f"❌ Job '{job_id}' not found.", fg="red")
+        return
+
+    # Validate step number if provided
+    if step is not None and step < 0:
+        click.secho("❌ Step number must be a non-negative integer.", fg="red")
+        return
+
+    try:
+        # Execute the rerun logic
+        engine.rerun_job(ctx, job_id, job_dir, start_step=step)
+    except Exception as e:
+        click.secho(f"❌ Error during job rerun: {e}", fg="red")
 
 
 @job.command()

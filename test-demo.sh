@@ -105,6 +105,56 @@ if ! echo "$ROLE_LIST_OUTPUT" | grep -q "Supervisor: Quality assurance and overs
 fi
 echo "✅ Role list command executed and roles verified"
 
+# Unit 8: job_rerun_command
+echo "📋 Unit 8: logist job rerun"
+mkdir -p "$DEMO_DIR/rerun-test-job"
+
+# Create a sample job spec with phases for testing rerun
+cat > "$DEMO_DIR/rerun-test-job/job.json" << 'EOF'
+{
+  "job_spec": {
+    "job_id": "rerun-test-job",
+    "description": "Test job for rerun functionality",
+    "phases": [
+      {"name": "analysis", "description": "Analysis phase"},
+      {"name": "implementation", "description": "Implementation phase"},
+      {"name": "testing", "description": "Testing phase"}
+    ]
+  }
+}
+EOF
+
+logist job create "$DEMO_DIR/rerun-test-job"
+if [ ! -f "$DEMO_DIR/rerun-test-job/job_manifest.json" ]; then
+    echo "❌ Rerun test job manifest not created"
+    exit 1
+fi
+echo "✅ Rerun test job created successfully"
+
+# Test rerun from start (no --step specified)
+logist job rerun rerun-test-job | grep -q "Starting rerun from the beginning"
+if [ $? -ne 0 ]; then
+    echo "❌ Job rerun from start failed"
+    exit 1
+fi
+echo "✅ Job rerun from start executed"
+
+# Test rerun from specific step
+logist job rerun rerun-test-job --step 1 | grep -q "Starting rerun from phase 1"
+if [ $? -ne 0 ]; then
+    echo "❌ Job rerun from specific step failed"
+    exit 1
+fi
+echo "✅ Job rerun from specific step executed"
+
+# Test rerun with invalid step (should handle gracefully)
+logist job rerun rerun-test-job --step 10 | grep -q "Invalid step number"
+if [ $? -ne 0 ]; then
+    echo "❌ Job rerun error handling for invalid step failed"
+    exit 1
+fi
+echo "✅ Job rerun error handling for invalid step number verified"
+
 
 echo ""
 echo "🎉 All implemented units passed!"
@@ -115,5 +165,6 @@ echo "✅ Job status command executed"
 echo "✅ Job selected successfully"
 echo "✅ Job workspace setup executed"
 echo "✅ Role list command executed and roles verified"
+echo "✅ Job rerun command executed and scenarios verified"
 echo ""
 echo "🎉 Demo script completed successfully"
