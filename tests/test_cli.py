@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Basic tests for Project Logist CLI - do-little tests that verify placeholder
+Basic tests for Logist CLI - do-little tests that verify placeholder
 functionality.
 """
 

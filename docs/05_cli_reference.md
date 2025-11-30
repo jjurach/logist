@@ -26,7 +26,7 @@ Specifies the root directory where the `jobs_index.json` file and all individual
 ## Top-Level Commands
 
 ### `logist --version`
-Displays the installed version of Project Logist.
+Displays the installed version of Logist.
 
 ### `logist --help`
 Shows a help message for the main `logist` command, listing all available command groups.

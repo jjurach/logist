@@ -1,9 +1,9 @@
-# Project Logist Architecture
+# Logist Architecture
 
 ## Core Terminology
 
 ### Logist (Tool/Project)
-The **Project Logist** is the primary orchestration tool that manages the execution of isolated, persistent jobs. It uses a Node.js-based tool, **`cline`**, as the fundamental execution primitive for running agentic tasks. It handles state management, resource tracking, Git safety practices, and flow control between automated agents and human checkpoints.
+Logist is the primary orchestration tool that manages the execution of isolated, persistent jobs. It uses a Node.js-based tool, **`cline`**, as the fundamental execution primitive for running agentic tasks. It handles state management, resource tracking, Git safety practices, and flow control between automated agents and human checkpoints.
 
 ### Job (Unit of Work)
 A **Job** represents a single, self-contained unit of work that requires persistent execution across multiple agent interactions. Each job is completely isolated - the Logist clones the current Git state before beginning work, creating a baseline hash that ensures safety and allows complete rollback if needed.

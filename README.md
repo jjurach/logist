@@ -1,4 +1,4 @@
-# Project Logist
+# Logist
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
@@ -60,7 +60,7 @@ pip install project-logist
 
 ### Cline CLI Setup
 
-Project Logist requires the **[Cline CLI](https://github.com/cline/cline)** tool as its execution primitive. Cline is a Node.js-based command-line interface that provides structured AI agent execution.
+Logist requires the **[Cline CLI](https://github.com/cline/cline)** tool as its execution primitive. Cline is a Node.js-based command-line interface that provides structured AI agent execution.
 
 #### Installation
 ```bash

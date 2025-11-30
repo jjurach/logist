@@ -1,6 +1,6 @@
 # Logist Project TODO and Future Work
 
-This document serves as a backlog of proposed features, documentation improvements, and open questions for the Project Logist.
+This document serves as a backlog of proposed features, documentation improvements, and open questions for the Logist project.
 
 ## 🎯 High-Level Implementation Goals
 

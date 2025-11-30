@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Project Logist CLI - Command Line Interface for Job Orchestration
+Logist CLI - Command Line Interface for Job Orchestration
 
 Placeholder implementation that prints intended actions.
 """
@@ -161,10 +161,10 @@ def get_job_id(ctx, job_id_arg: str | None) -> str | None:
 )
 @click.pass_context
 def main(ctx, jobs_dir):
-    """Project Logist - Sophisticated Agent Orchestration."""
+    """Logist - Sophisticated Agent Orchestration."""
     ctx.ensure_object(dict)
     ctx.obj["JOBS_DIR"] = jobs_dir
-    click.echo(f"⚓ Welcome to Project Logist - Using jobs directory: {jobs_dir}")
+    click.echo(f"⚓ Welcome to Logist - Using jobs directory: {jobs_dir}")
 
 
 @main.group()
