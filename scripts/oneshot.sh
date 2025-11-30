@@ -35,7 +35,7 @@ fi
 echo "Executing Cline oneshot: $PROMPT_BASENAME"
 echo "=================================================="
 
-SHORT_NAME=$(basename "$META_PROMPT_FILE")
+SHORT_NAME=$(basename "$PROMPT_FILE")
 
 # Execute the oneshot command with attached files
 exec cline --yolo --oneshot $FILE_ARGS "Execute $SHORT_NAME" 2>&1 | tee -a $scriptdir/oneshot.out
