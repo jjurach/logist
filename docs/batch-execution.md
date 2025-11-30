@@ -79,11 +79,44 @@ Prior to early testing, system instructions must be developed that explicitly co
 
 ## Recovery and Restart Logic
 
-The watchdog should implement automatic recovery:
+## ✅ Implemented Automatic Restart Features
 
-- **Detection**: When STUCK or inactivity detected, kill the running process using the captured PID.
-- **Restart/Resumption**: Use `cline task new --resume-or-new <ID>` or `cline task open <ID>` to resume the task with the same ID.
-- **Iteration Limits**: Track restart attempts to prevent infinite loops (e.g., max 3-5 retries).
+The enhanced `oneshot-monitor.py` script now includes full automatic restart functionality:
+
+### Restart Command Implementation
+```bash
+cline task open $task_id --oneshot --yolo
+```
+
+### Process Management Integration
+- **Graceful Termination**: Uses SIGTERM first (2s timeout), then SIGKILL for stubborn processes
+- **PID Tracking**: Monitors and terminates the original task process before restart
+- **Anti-Loop Protection**: Minimum 1-minute delay between restart attempts
+
+### Restart Configuration Options
+```bash
+# Enable auto-restart with process termination
+oneshot-monitor.py <task_id> --auto-restart --pid <process_id> --max-retries 3
+
+# Batch execution with built-in restart
+batch-executor.py tasks.json --auto-restart --timeout 15
+```
+
+### Restart Algorithm
+1. **Inactivity Detection**: Task inactive > timeout period triggers restart check
+2. **Retry Limit Check**: Compare current restarts vs. `--max-retries` (default: 3)
+3. **Process Termination**: Kill original process using tracked PID
+4. **Restart Execution**: Run `cline task open $task_id --oneshot --yolo`
+5. **Continuation Monitoring**: Continue monitoring the restarted task
+6. **Final Failure**: Mark as permanently stuck after max retries exceeded
+
+### Batch Executor Enhancement
+The new `batch-executor.py` script provides:
+- **Multi-Task Processing**: Execute multiple tasks sequentially with individual monitoring
+- **Integrated Restart**: Automatic restart for all tasks with `--auto-restart` flag
+- **Process Tracking**: Full PID lifecycle management per task
+- **Result Aggregation**: Comprehensive batch execution reports
+- **Error Handling**: Graceful handling of launch and monitoring failures
 
 ## Output Format Definitions
 
