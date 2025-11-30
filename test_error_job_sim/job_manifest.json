@@ -1,0 +1,19 @@
+{
+  "job_id": "test_error_job_sim",
+  "description": "Test Job test_error_job_sim",
+  "status": "INTERVENTION_REQUIRED",
+  "current_phase": "initial",
+  "metrics": {
+    "cumulative_cost": 0,
+    "cumulative_time_seconds": 0
+  },
+  "history": [
+    {
+      "event": "ERROR",
+      "description": "Execution failed: Simulated CLINE execution failure for testing.",
+      "details": "Error Type: JobProcessorError",
+      "raw_output": "No raw output available.",
+      "timestamp": "2025-11-30T13:12:10.165520"
+    }
+  ]
+}
