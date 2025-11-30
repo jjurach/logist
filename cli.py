@@ -55,14 +55,25 @@ class PlaceholderJobManager:
     """Placeholder job manager that prints what it would do."""
 
     def get_current_job_id(self, jobs_dir: str) -> str | None:
-        """Simulate getting the current job ID."""
-        print(f"   → Would: Read `current_job_id` from '{os.path.join(jobs_dir, 'jobs_index.json')}'")
-        return "placeholder-current-job"
+        """Get the current job ID from jobs index."""
+        jobs_index_path = os.path.join(jobs_dir, "jobs_index.json")
+        if not os.path.exists(jobs_index_path):
+            return None
+
+        try:
+            with open(jobs_index_path, 'r') as f:
+                jobs_index = json.load(f)
+            return jobs_index.get("current_job_id")
+        except (json.JSONDecodeError, OSError):
+            return None
 
     def create_job(self, job_dir: str, jobs_dir: str) -> str:
-        """Simulate creating or registering a new job."""
+        """Create or register a new job with manifest and directory structure."""
         job_dir_abs = os.path.abspath(job_dir)
         jobs_dir_abs = os.path.abspath(jobs_dir)
+
+        # Derive job_id from directory name
+        job_id = os.path.basename(job_dir_abs)
 
         # Check if the job dir is inside the jobs_dir
         if os.path.dirname(job_dir_abs) != jobs_dir_abs:
@@ -72,16 +83,96 @@ class PlaceholderJobManager:
             )
             click.echo("    This is allowed, but not recommended for easier management.")
 
-        print(f"✨ [PURSER] Initializing or updating job in '{job_dir_abs}'")
-        print("   → Would: Find or create `job_manifest.json` and add default info.")
-        print(f"   → Would: Register job path in '{os.path.join(jobs_dir, 'jobs_index.json')}'")
-        print("   → Would: Set this job as the currently selected job.")
-        return os.path.basename(job_dir_abs)
+        # Ensure job directory exists
+        os.makedirs(job_dir_abs, exist_ok=True)
+
+        # Try to find and read job specification file
+        job_spec = None
+        spec_files = ['sample-job.json', 'job.json', 'job-spec.json']
+        for spec_file in spec_files:
+            spec_path = os.path.join(job_dir_abs, spec_file)
+            if os.path.exists(spec_path):
+                try:
+                    with open(spec_path, 'r') as f:
+                        job_spec = json.load(f).get('job_spec', {})
+                    break
+                except (json.JSONDecodeError, OSError):
+                    continue
+
+        # Create job_manifest.json
+        manifest_path = os.path.join(job_dir_abs, "job_manifest.json")
+        if os.path.exists(manifest_path) and not click.confirm(f"Job manifest already exists in '{job_dir_abs}'. Overwrite?"):
+            return job_id
+
+        # Build initial manifest
+        job_manifest = {
+            "job_id": job_spec.get('job_id', job_id) if job_spec else job_id,
+            "description": job_spec.get('description', f'Job {job_id}') if job_spec else f'Job {job_id}',
+            "status": "PENDING",
+            "current_phase": job_spec.get('phases', [{}])[0].get('name', None) if job_spec and job_spec.get('phases') else None,
+            "metrics": {
+                "cumulative_cost": 0,
+                "cumulative_time_seconds": 0
+            },
+            "history": []
+        }
+
+        # Add job_spec content if present
+        if job_spec:
+            # Merge key job spec fields, avoiding conflicts with manifest fields
+            for key, value in job_spec.items():
+                if key not in ['job_id', 'description']:  # These are handled above
+                    job_manifest[key] = value
+
+        # Write job manifest
+        with open(manifest_path, 'w') as f:
+            json.dump(job_manifest, f, indent=2)
+
+        # Update jobs_index.json
+        jobs_index_path = os.path.join(jobs_dir, "jobs_index.json")
+        if os.path.exists(jobs_index_path):
+            try:
+                with open(jobs_index_path, 'r') as f:
+                    jobs_index = json.load(f)
+            except (json.JSONDecodeError, OSError):
+                jobs_index = {"current_job_id": None, "jobs": {}}
+        else:
+            jobs_index = {"current_job_id": None, "jobs": {}}
+
+        # Register the job
+        if "jobs" not in jobs_index:
+            jobs_index["jobs"] = {}
+        jobs_index["jobs"][job_id] = job_dir_abs
+        jobs_index["current_job_id"] = job_id
+
+        # Write updated jobs index
+        with open(jobs_index_path, 'w') as f:
+            json.dump(jobs_index, f, indent=2)
+
+        return job_id
 
     def select_job(self, job_id: str, jobs_dir: str) -> None:
-        """Simulate selecting a job as the current one."""
-        print(f"📌 [PURSER] Setting '{job_id}' as the current job.")
-        print(f"   → Would: Update `current_job_id` in '{os.path.join(jobs_dir, 'jobs_index.json')}'")
+        """Set a job as the currently selected job."""
+        jobs_index_path = os.path.join(jobs_dir, "jobs_index.json")
+        if not os.path.exists(jobs_index_path):
+            raise click.ClickException(f"Jobs directory not initialized. Run 'logist init' first.")
+
+        try:
+            with open(jobs_index_path, 'r') as f:
+                jobs_index = json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            raise click.ClickException(f"Failed to read jobs index: {e}")
+
+        if "jobs" not in jobs_index or job_id not in jobs_index["jobs"]:
+            raise click.ClickException(f"Job '{job_id}' not found in jobs index.")
+
+        jobs_index["current_job_id"] = job_id
+
+        try:
+            with open(jobs_index_path, 'w') as f:
+                json.dump(jobs_index, f, indent=2)
+        except OSError as e:
+            raise click.ClickException(f"Failed to update jobs index: {e}")
 
     def get_job_status(self, job_id: str) -> dict:
         """Simulate retrieving job status."""
