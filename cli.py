@@ -7,6 +7,7 @@ Placeholder implementation that prints intended actions.
 
 import json
 import os
+import shutil
 
 import click
 
@@ -129,6 +130,39 @@ class PlaceholderRoleManager:
 engine = PlaceholderLogistEngine()
 manager = PlaceholderJobManager()
 role_manager = PlaceholderRoleManager()
+
+
+def init_command(jobs_dir: str) -> bool:
+    """Initialize the jobs directory with default configurations."""
+    try:
+        # Create jobs directory if it doesn't exist
+        os.makedirs(jobs_dir, exist_ok=True)
+
+        # Get the path to the schemas directory relative to this file
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        schemas_dir = os.path.join(script_dir, "..", "schemas", "roles")
+
+        # Copy role configurations
+        roles_to_copy = ["worker.json", "supervisor.json"]
+        for role_file in roles_to_copy:
+            schema_path = os.path.join(schemas_dir, role_file)
+            dest_path = os.path.join(jobs_dir, role_file)
+            if os.path.exists(schema_path):
+                shutil.copy2(schema_path, dest_path)
+            else:
+                click.secho(f"⚠️  Warning: Schema file '{role_file}' not found in '{schemas_dir}'", fg="yellow")
+
+        # Create jobs index file
+        jobs_index_path = os.path.join(jobs_dir, "jobs_index.json")
+        jobs_index_data = {"current_job_id": None}
+        with open(jobs_index_path, 'w') as f:
+            json.dump(jobs_index_data, f, indent=2)
+
+        return True
+
+    except (OSError, IOError) as e:
+        click.secho(f"❌ Error during initialization: {e}", fg="red")
+        return False
 
 
 def get_job_id(ctx, job_id_arg: str | None) -> str | None:
@@ -309,6 +343,31 @@ def inspect_role(role_name: str):
     click.echo(f"👤 Executing 'logist role inspect {role_name}'")
     role_data = role_manager.inspect_role(role_name)
     click.echo(json.dumps(role_data, indent=2))
+
+
+@main.command()
+@click.pass_context
+def init(ctx):
+    """Initialize the jobs directory with default configurations."""
+    jobs_dir = ctx.obj["JOBS_DIR"]
+    click.echo(f"🛠️  Executing 'logist init' with jobs directory: {jobs_dir}")
+
+    # Check if already initialized
+    jobs_index_path = os.path.join(jobs_dir, "jobs_index.json")
+    if os.path.exists(jobs_index_path):
+        click.secho("⚠️  Jobs directory appears to be already initialized.", fg="yellow")
+        if not click.confirm("Do you want to reinitialize? This may overwrite existing files."):
+            click.echo("❌ Initialization cancelled.")
+            return
+
+    # Initialize the jobs directory
+    if init_command(jobs_dir):
+        click.secho("✅ Jobs directory initialized successfully!", fg="green")
+        click.echo(f"   📁 Created directory: {jobs_dir}")
+        click.echo("   📋 Created jobs_index.json")
+        click.echo("   📎 Copied worker.json and supervisor.json")
+    else:
+        click.secho("❌ Failed to initialize jobs directory.", fg="red")
 
 
 if __name__ == "__main__":
