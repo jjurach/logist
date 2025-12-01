@@ -256,12 +256,51 @@ Review the [Architecture Deep Dive](01_architecture.md) and [Role System Details
 
 ## 📚 Documentation Map
 
-- **[Architecture Deep Dive](01_architecture.md)**: Core concepts and execution philosophy
-- **[Roles & Data Structures](02_roles_and_data.md)**: Agent communication and job state management
-- **[CLI Reference](03_cli_and_metrics.md)**: Complete command documentation
-- **[State Machine Guide](04_state_machine.md)**: Detailed workflow and transition logic
-- **[Testing Strategy](06_testing_strategy.md)**: Quality assurance and validation approaches
-- **[Master Development Plan](master-plan.md)**: Systematic implementation roadmap
+### 🤖 **For AI Agents: Reading Priority Guide**
+
+**New AI agents joining the project:**
+1. Read `overview.md` (this file) first - get 30-second project comprehension
+2. Read `01_architecture.md` - understand core concepts, jobs, agents, safety
+3. Read `02_roles_overview.md` - understand Worker/Supervisor role specialization
+4. Skim `03_cli_and_metrics.md` - know how humans interact with the system
+5. Read specific docs only when needed for your assigned task
+
+**For executing jobs:**
+- Focus on `communication-protocol.md` for understanding JSON response requirements
+- Use `04_state_machine.md` only if implementing state transition logic
+- Reference `archive/research-notes.md` only for historical Cline integration patterns
+
+**For developing new features:**
+- Read `implementation-history.md` for current architecture status and decisions
+- Study technical details in `docs/technical/` directory
+- Review `06_testing_strategy.md` for testing approaches
+
+**For security/cost analysis:**
+- Focus on sections about Git isolation and resource guardrails
+- Study evidence file tracking and job history audit trails
+
+---
+
+### 📖 **For Humans: Reading Guide**
+
+#### **User Onboarding (Start Here)**
+- **[Executive Overview](overview.md)** ← You are here - Project introduction
+- **[Quick Start](../README.md#quick-start)** - Installation and first job
+- **[Architecture Overview](01_architecture.md)** - Core concepts explained
+
+#### **Job Execution**
+- **[Role System](02_roles_overview.md)** - Worker & Supervisor agent specialization
+- **[CLI Commands](03_cli_and_metrics.md)** - Complete command reference
+- **[State Machine Logic](04_state_machine.md)** - Workflow and transitions
+
+#### **Technical Implementation**
+- **[Communication Protocol](technical/communication-protocol.md)** - JSON schemas & agent responses
+- **[Implementation History](implementation-history.md)** - Development timeline
+- **[Testing Strategy](06_testing_strategy.md)** - QA and validation
+
+#### **Historical Archive**
+- **[Research Notes](archive/research-notes.md)** - Cline integration findings
+- **[Implementation Prompts](archive/implementation-prompts/)** - Development artifacts
 
 ---
 

@@ -1,64 +1,71 @@
-# Logist Master Development Plan
+# Logist Implementation History
 
-This document outlines the ordered implementation of Logist's core features in small, verifiable chunks. Each chunk builds dependencies systematically from simple directory operations to complex workflow orchestration.
+This document chronicles the systematic development and implementation of Logist's core features from research phase through operational deployment. Each phase represents a milestone in building a reliable, production-ready agent orchestration system.
 
-## 📊 Phase 0: Research & Prototyping
+## 📊 Phase 0: Research & Prototyping ✅ **Completed**
 
-### 0. json_validation_unit
-**Description:** Develop JSON schema validation infrastructure for LLM response processing with demonstration assets
-**Objective:** Implement robust parsing and validation of LLM JSON responses according to logist/schemas/llm-chat-schema.json for bidirectional communication, develop system instructions requiring valid schema compliance, create error handling that escalates schema violations to INTERVENTION_REQUIRED with descriptive failure information
-**Scope:** Choose jsonschema library and add to requirements.txt, create validation wrapper functions, integrate schema enforcement for both requests (logist→LLM) and responses (LLM→logist), document system prompt additions for reliable JSON output from LLMs, implement descriptive error messaging on validation failures, provide demo script and example JSON files for validation testing
-**Dependencies:** None
-**Files (Read):** logist/schemas/llm-chat-schema.json, LLM response outputs, example JSON files in logist/docs/examples/llm-exchange/
-**Files (Write):** requirements.txt (jsonschema dependency), system instruction templates with schema requirements, JSON validation utilities with wrapper functions, logist/scripts/demo-schema.py validation demonstration script, logist/docs/examples/llm-exchange/ (*.json example files), logist/docs/prompts/01-json_validation_unit.md controlling prompt file
-**Verification:** Consistent validation of COMPLETED/STUCK/RETRY responses, descriptive error messages on malformed inputs/outputs, demo script successfully processes valid and rejects invalid example files, system instructions clearly specify JSON schema compliance for bidirection communication
-**Dependency Metadata:** Provides validation foundation enabling reliable response processing in Phase 3.9 (job_poststep_command); establishes library selection and demo patterns for future validation units
-**Testing Notes:** Comprehensive unit tests for valid/invalid JSON responses showing pass/fail; demo script integrated into testing suite; deliberate malformed JSON responses tested for correct escalation to INTERVENTION_REQUIRED; validate system instructions produce compliant LLM outputs through demo executions
+### 0. json_validation_unit ✅ **Implemented**
+**Status:** Complete - Validated JSON schema processing infrastructure operational
+**Outcome:** Robust LLM response validation with schema enforcement, error escalation protocols, and testing infrastructure established
+**Technical Implementation:**
+- jsonschema library integrated with error handling
+- Bidirectional communication protocol validated
+- System instructions updated for schema compliance
+- Demo scripts and example JSON files created
+- Comprehensive unit tests for schema validation
+- Escalation logic for malformed LLM responses
 
-### 0. oneshot_research_unit
-**Description:** Research iterative construction of interface for starting, monitoring, and parsing Cline oneshot execution outputs
-**Objective:** Construct reliable interface and tooling for external processes to start oneshot executions and monitor completion via JSON state file polling, with documented output formats and iterative cost/token research
-**Scope:** Develop monitoring interface, document JSON response schemas (action: COMPLETED for success, RETRY for restart needed, STUCK for intervention required), implement protocol for polling ~/.cline/x/tasks/<ID>/task_metadata.json, include testing by selecting deliberately simple test job and running --oneshot 10-20 times while logging token counts and costs per execution for variance analysis
-**Dependencies:** None
-**Files (Read):** Cline task state files (~/.cline/x/tasks/<ID>/task_metadata.json)
-**Files (Write):** logist/docs/oneshot-research.md (interface docs and findings), wrapper scripts for start/monitoring
-**Verification:** Functional monitoring interface with successful parsing of completions, restarts, interventions; documented findings on token/cost patterns; at least 10 test executions completed with full metrics
-**Dependency Metadata:** Establishes oneshot monitoring patterns and cost expectations for subsequent job execution phases
-**Testing Notes:** Iterative testing protocol: use simple, predictable test job (e.g., file touch or echo task), execute --oneshot mode repeatedly, record API costs/tokens from LLM provider responses, analyze variance and breakpoints
+### 0. oneshot_research_unit ✅ **Implemented**
+**Status:** Complete - Cline CLI integration patterns established and tested
+**Outcome:** Reliable monitoring interfaces developed, cost/token variance analyzed, implementation foundation laid
+**Key Findings:**
+- Task ID generation: Unix timestamp-based (milliseconds)
+- Completion detection: Timeout-based inactivity monitoring
+- Metadata extraction: CLI command parsing with file system validation
+- Cost tracking: `$0.0000` during testing (free tier usage)
+- Token variance: 2.8x variation observed across identical tasks
+**Technical Implementation:**
+- Oneshot start/monitor interfaces developed
+- Statistical analysis tools created
+- Variance research documented (see `archive/research-notes.md`)
+- Batch processing interfaces prototyped
 
-## 🏗️ Phase 1: Foundation (Directory & Config Management)
+## 🏗️ Phase 1: Foundation (Directory & Config Management) ✅ **Completed**
 
-### 1. init_command
-**Description:** Implement `logist init` Command
-**Objective:** Set up jobs directory structure and copy default configurations
-**Scope:** Command-line argument parsing, directory creation, file copying
-**Dependencies:** None
-**Files (Read):** `logist/schemas/roles/` (templates)
-**Files (Write):** `$JOBS_DIR/jobs_index.json`, `$JOBS_DIR/*.json` (role templates)
-**Verification:** Creates `$JOBS_DIR/jobs_index.json`, copies role templates and schema
-**Dependency Metadata:** Required for: job_list_command, job_create_command, job_select_command, role_list_command, role_inspect_command
-**Testing Notes:** Does not interact with external LLM provider. Add more comprehensive test cases to demo script (see logist/docs/06_testing_strategy.md for extension guidelines).
+### 1. init_command ✅ **Implemented**
+**Status:** Complete - Jobs directory infrastructure operational
+**Technical Implementation:**
+- Command-line interface for directory setup
+- Role template copying mechanism
+- Jobs index initialization
+- Package resource loading for schema files
+- Python package resource management
+**Files:** `cli.py: init_command()`, package-data configuration in `pyproject.toml`
+**Verification:** Creates `$JOBS_DIR/jobs_index.json`, validates role template installation
+**Dependencies Unlocked:** All Phase 1-5 job management commands now supported
 
-### 2. job_list_command
-**Description:** Implement `logist job list` Command
-**Objective:** Display all jobs in the configured jobs directory
-**Scope:** Read `jobs_index.json`, directory scanning, formatted output
-**Dependencies:** jobs directory setup (Phase 1.1)
-**Files (Read):** `$JOBS_DIR/jobs_index.json`, job manifest files
-**Files (Write):** Console output
-**Verification:** Shows job IDs, statuses, and descriptions from jobs index
-**Dependency Metadata:** Required for: job_create_command, job_select_command
-**Testing Notes:** Does not interact with external LLM provider. Add more comprehensive test cases to demo script (see logist/docs/06_testing_strategy.md for extension guidelines).
+### 2. job_list_command ✅ **Implemented**
+**Status:** Complete - Job enumeration and status display operational
+**Technical Implementation:**
+- Jobs index reading and parsing
+- Job manifest scanning
+- Formatted console output with status indicators
+- Queue position tracking
+**Files:** `cli.py: JobManager.list_jobs()`, `logist/job_state.py`
+**Verification:** Displays job IDs, statuses, descriptions from jobs index
+**Dependencies Unlocked:** job_create_command, job_select_command
 
-### 3. job_create_command
-**Description:** Implement `logist job create` Command
-**Objective:** Initialize new job with manifest and directory structure
-**Scope:** Job manifest creation, directory mismatch warnings, job registration
-**Dependencies:** jobs directory exists (Phase 1.1), job listing works (Phase 1.2)
-**Files (Read):** Job specification file (sample-job.json)
-**Files (Write):** `job_manifest.json`, updates `$JOBS_DIR/jobs_index.json`
-**Verification:** Creates `job_manifest.json`, registers in jobs index, handles directory mismatches
-**Dependency Metadata:** Required for: job_status_command, job_select_command, isolation_env_setup, job_step_command, job_preview_command, job_run_command, job_rerun_command, job_restep_command, job_chat_command
+### 3. job_create_command ✅ **Implemented**
+**Status:** Complete - Job initialization and manifest creation operational
+**Technical Implementation:**
+- Job specification parsing
+- Directory structure creation
+- Job manifest JSON generation
+- Jobs index registration
+- Validation and error handling
+**Files:** `cli.py: JobManager.create_job()`, job manifest templates
+**Verification:** Creates `job_manifest.json`, registers in jobs index
+**Dependencies Unlocked:** All job execution and management commands (job_status, job_step, job_run, etc.)
 
 ## 🔍 Phase 2: Job Status & Selection (Read-Only Operations)
 

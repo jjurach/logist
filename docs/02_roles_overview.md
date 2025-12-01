@@ -1,38 +1,42 @@
-# Roles and Data Structures
+# Roles Overview
 
-## Programmable Roles
+## Programmable Roles System
 
-### Role Manifest System
-The **Role Manifest** (`~/.logist/roles.json`) is a global configuration file defining all available agent roles. Each role specializes in different aspects of job execution, allowing flexible workflow customization. Roles are organized by expertise area and can be referenced by name in job specifications.
+### Role Manifest Architecture
+The **Role Manifest** system enables flexible AI agent specialization within Logist's orchestration framework. Roles provide programmable templates for different aspects of job execution, allowing customized behavior patterns and expertise areas. Each role encapsulates specific skills, constraints, and decision-making frameworks tailored to distinct workflow phases.
 
 ### Role Definition Structure
-Every role requires exactly four mandatory attributes:
+Every role requires exactly four mandatory attributes that define its complete operational profile:
 
-- **`name`**: Unique identifier for the role (e.g., "Worker", "Supervisor", "Tester")
-- **`description`**: Human-readable explanation of the role's expertise and responsibilities
-- **`instructions`**: Complete meta-prompt defining the role's behavior, constraints, and decision-making framework
-- **`llm_model`**: Specific LLM model identifier for this role (e.g., "grok-code-fast-1", "gemini-2.5-flash")
+- **`name`**: Unique identifier for role-based specialization
+- **`description`**: Human-readable explanation of role expertise and responsibilities
+- **`instructions`**: Complete meta-prompt defining behavior, constraints, and decision-making framework
+- **`llm_model`**: Specific LLM model identifier for consistent role behavior
 
-### Example Role Definitions
+### Core Role Types
 
 ```json
 {
-  "roles": {
-    "Worker": {
-      "name": "Worker",
-      "description": "Expert software development and implementation agent specializing in code generation, debugging, and technical problem-solving",
-      "instructions": "You are an expert software engineer...",
-      "llm_model": "grok-code-fast-1"
-    },
-    "Supervisor": {
-      "name": "Supervisor",
-      "description": "Quality assurance and oversight specialist focused on reviewing outputs, identifying issues, and providing constructive feedback",
-      "instructions": "You are a senior technical reviewer...",
-      "llm_model": "gemini-2.5-flash"
-    }
+  "Worker": {
+    "name": "Worker",
+    "description": "Expert software development and implementation agent specializing in code generation, debugging, and technical problem-solving",
+    "instructions": "You are an expert software engineer...",
+    "llm_model": "grok-code-fast-1"
+  },
+  "Supervisor": {
+    "name": "Supervisor",
+    "description": "Quality assurance and oversight specialist focused on reviewing outputs, identifying issues, and providing constructive feedback",
+    "instructions": "You are a senior technical reviewer...",
+    "llm_model": "gemini-2.5-flash"
   }
 }
 ```
+
+### Role Specialization Benefits
+- **Expertise Isolation**: Different models excel at different tasks (creation vs. evaluation)
+- **Behavioral Consistency**: Configurable behavior patterns across job types
+- **Workflow Flexibility**: Mix and match roles for different project needs
+- **Quality Assurance**: Specialized roles for specific verification tasks
 
 ## Structured Communication
 

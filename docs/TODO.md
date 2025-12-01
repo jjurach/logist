@@ -1,36 +1,87 @@
 # Logist Project TODO and Future Work
 
-This document serves as a backlog of proposed features, documentation improvements, and open questions for the Logist project.
+This document serves as a structured backlog of proposed features and improvements for the Logist project. Organized by priority and implementation phase to guide systematic development.
 
-## 🎯 High-Level Implementation Goals
+## 🔥 **High Priority (Phase 2-3 Implementation)**
 
--   **Transition from Placeholders**: Replace the current `PlaceholderLogistEngine` and `PlaceholderJobManager` in `logist/cli.py` with a functional implementation that can execute jobs.
--   **Core Data Models**: Implement the primary data structures (`Job`, `Role`, `JobManifest`) using Pydantic or dataclasses to ensure type safety and serialization.
--   **State Management**: Build the logic for creating, updating, and persisting job state to the filesystem (e.g., in `~/.logist/jobs/`).
--   **`cline` Integration**: Develop the mechanism for Logist to invoke the `cline` Node.js tool, pass it the required parameters, and parse its output.
--   **Git Commit Merging**: Design and implement the workflow for taking the agent-generated commits from the isolated Git environment and merging them into the main repository, potentially via a patch file or a human-approved pull request.
--   **Implement Jobs Index**: Define the schema and create the logic for managing the central `jobs_index.json` file, including adding, removing, and locating jobs.
--   **Implement `logist job preview` command**: Display the next agent prompt without execution.
--   **Implement `--dry-run` flag for `logist job step`**: Simulate a full execution cycle with mock responses.
+### Core Execution Engine
+- **Implement job step command**: Execute single agent phase with Cline CLI integration
+- **Implement job run command**: Continuous multi-phase execution with handoffs
+- **Implement job poststep command**: Process simulated LLM responses for testing
+- **Add workspace isolation setup**: Git clone-based workspace preparation
 
-## 📚 Documentation Tasks
+### State & Resource Management
+- **Complete state persistence system**: Job manifest updates and crash recovery
+- **Implement resource threshold enforcement**: Cost/time/action limits with automatic halting
+- **Add job preview functionality**: Prompt display without execution
+- **Implement dry-run capabilities**: Simulation mode for strategy validation
 
--   **Create a Tutorial**: Write a new `06_tutorial.md` that walks a user through the entire lifecycle of the `sample-job.json`.
--   **Visualize State Machine**: ✅ Add Graphviz diagram (logist/docs/state-machine-fig1.gv) showing legal transitions and agent handoffs. Generate PNG with: `dot -Tpng state-machine-fig1.gv -o state-machine-fig1.png`
--   **Formalize Schemas in Docs**: Embed the JSON Schema for the `JobManifest` and `JSON Exit Command` directly into `02_roles_and_data.md` for clarity.
--   **Implement Full Role Instructions**: Create complete schema-aware role instructions in `logist/schemas/roles/` with proper JSON protocol understanding, acceptance criteria evaluation, and action selection guidance. Current files are placeholders with TODO markers.
--   **Add Troubleshooting Guide**: Create `07_troubleshooting.md` with common issues, error resolution, and debugging tips.
--   **Document Security Model**: Add security considerations including API key management, job isolation, and safe AI agent execution.
--   **Create Contributing Guide**: Expand development setup documentation with detailed coding standards, testing protocols, and PR checklist.
--   **Add Example Jobs Library**: Provide diverse job configurations for different use cases (web dev, data analysis, content creation, etc.).
--   **Document Monitoring & Observability**: Explain how to monitor job progress, set up alerts, and analyze performance metrics.
--   **Create Deployment Guide**: Document production deployment scenarios, Docker containerization, and operational considerations.
+## 📅 **Medium Priority (Phase 4-5 Enhancement)**
 
-## ❓ Open Questions & Design Decisions
+### Job Control Operations
+- **Implement job rerun command**: Reset and restart job execution
+- **Implement job restep command**: Rewind to previous checkpoint and retry
+- **Add job chat command**: Interactive debugging via `cline task chat`
 
+### Role Management System
+- **Complete role_list command**: Display available agent roles
+- **Complete role_inspect command**: Show detailed role configurations
+- **Implement role creation/updates**: Dynamic role management capabilities
 
+## 🔧 **Forward Compatibility (Phase 6-7 Advanced)**
 
--   **Configuration Strategy**: Formalize the application's configuration. The `~/.logist/` directory is mentioned; we should define its structure and adopt the XDG Base Directory Specification for cross-platform compatibility.
--   **Testing Strategy**: Define a testing strategy for the functional implementation. This will require mocking `cline` calls, filesystem interactions, and LLM API responses.
--   **Structured Logging**: Implement structured logging (e.g., using Python's `logging` module with a JSON formatter) throughout the application to provide better traceability and debugging for complex jobs.
--   **Temporary Directory Cleanup**: A strategy for cleaning up the temporary `work/<timestamp>` directories created for Git isolation will be needed eventually.
+### Advanced Execution Features
+- **Enhanced error handling system**: Comprehensive failure recovery and escalation
+- **Advanced isolation cleanup**: Automated workspace management
+- **Metrics & cost tracking system**: Complete resource monitoring and reporting
+- **Git integration enhancements**: Patch file generation and merge preparation
+
+## 💡 **Research & Innovation (Future Phases)**
+
+### Scalability & Performance
+- **Batch execution capabilities**: Multi-job orchestration with resource pooling
+- **Structured logging system**: Comprehensive audit trails and debugging
+- **API interfaces**: REST endpoints for job management and monitoring
+
+### Enterprise Features
+- **Visual dashboard**: Web-based job monitoring and control interface
+- **Role-based access control**: Multi-user enterprise deployment support
+- **Advanced integrations**: External service connections and notifications
+
+## 📚 **Documentation & User Experience**
+
+### User-Focused Documentation
+- **Create comprehensive tutorial**: `docs/tutorials/basic-workflow.md` with sample lifecycle
+- **Add troubleshooting guide**: `docs/user/troubleshooting.md` for common issues
+- **Create deployment guide**: Production containerization and operational runbooks
+- **Add example jobs library**: Curated configurations for common use cases
+
+### Technical Documentation
+- **Complete contributing guide**: Development setup, coding standards, testing protocols
+- **Add API documentation**: Internal module interfaces and extension points
+- **Create security model guide**: API key management, isolation guarantees, threat modeling
+- **Implement monitoring guide**: Observability setup, alerting, and performance analysis
+
+## ❓ **Design Decisions & Open Questions**
+
+### Architectural Evolution
+- **Configuration strategy**: Define XDG Base Directory compliant config structure
+- **Data model standardization**: Migrate to Pydantic for type safety and validation
+- **Plugin architecture**: Design extension points for custom agent roles and integrations
+- **Multi-agent coordination**: Framework for complex agent interaction patterns
+
+### Platform & Integration
+- **Cross-platform compatibility**: Windows, macOS, Linux environment handling
+- **Cline CLI version support**: Compatibility matrix and version pinning strategy
+- **External LLM provider support**: Broader model ecosystem integration
+- **Container deployment**: Docker compose specifications for production deployment
+
+---
+
+## 📊 **Current Status Summary**
+
+**Completed (Phase 0-1)**: Foundation schemas, CLI framework, basic job management
+**In Progress (Phase 2-3)**: Core execution engine implementation
+**Planned (Phase 4+)**: Advanced features, scalability, enterprise capabilities
+
+Each item includes implementation scope and can be developed as independently testable units following the established systematic approach.
