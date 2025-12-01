@@ -119,7 +119,8 @@ def update_job_manifest(
     new_phase: str = None,
     cost_increment: float = 0.0,
     time_increment: float = 0.0,
-    history_entry: Dict[str, Any] = None
+    history_entry: Dict[str, Any] = None,
+    skip_backup: bool = False
 ) -> Dict[str, Any]:
     """
     Updates the job manifest with new state and metrics.
@@ -131,6 +132,7 @@ def update_job_manifest(
         cost_increment: Amount to add to cumulative cost.
         time_increment: Time in seconds to add to cumulative time.
         history_entry: History entry to append (dict with appropriate fields).
+        skip_backup: If True, skip creating a backup before changes (dangerous!).
 
     Returns:
         Updated manifest dictionary.
@@ -140,6 +142,16 @@ def update_job_manifest(
     """
     manifest = load_job_manifest(job_dir)
     modified = False
+
+    # Create backup before making any changes (unless explicitly skipped)
+    if not skip_backup and (new_status or new_phase or cost_increment > 0 or time_increment > 0 or history_entry):
+        try:
+            from logist.recovery import create_job_manifest_backup
+            create_job_manifest_backup(job_dir)
+        except Exception:
+            # Log warning but don't fail - backup is nice but not critical
+            import sys
+            print("Warning: Failed to create job manifest backup", file=sys.stderr)
 
     # Update status
     if new_status is not None:

@@ -17,6 +17,7 @@ from logist import workspace_utils # Import the new module
 from logist.job_state import JobStateError, load_job_manifest, get_current_state_and_role, update_job_manifest, transition_state
 from logist.job_processor import execute_llm_with_cline, handle_execution_error, validate_evidence_files, JobProcessorError
 from logist.job_context import assemble_job_context, JobContextError # Now exists
+from logist.recovery import validate_state_persistence, get_recovery_status, RecoveryError
 
 
 class LogistEngine:
@@ -101,6 +102,18 @@ class LogistEngine:
     def step_job(self, ctx: click.Context, job_id: str, job_dir: str, dry_run: bool = False, model: str = "grok-code-fast-1") -> bool:
         """Execute single phase of job and pause."""
         manager.setup_workspace(job_dir) # Ensure workspace is ready
+
+        # Recovery validation - check for hung processes and recover if needed
+        try:
+            from logist.recovery import validate_state_persistence
+            recovery_result = validate_state_persistence(job_dir)
+            if recovery_result["recovered"]:
+                click.secho(f"🔄 Recovery performed before execution: {recovery_result['recovery_from']}", fg="blue")
+            if recovery_result["errors"]:
+                for error in recovery_result["errors"]:
+                    click.secho(f"⚠️  Recovery warning: {error}", fg="yellow")
+        except Exception as e:
+            click.secho(f"⚠️  Recovery validation failed: {e}", fg="yellow")
 
         if dry_run:
             click.secho("   → Defensive setting detected: --dry-run", fg="yellow")
@@ -982,14 +995,48 @@ def restep(ctx, job_id: str | None, step: int, dry_run: bool):
 @job.command()
 @click.argument("job_id", required=False)
 @click.option("--json", "output_json", is_flag=True, help="Output raw JSON instead of formatted text")
+@click.option("--recovery", is_flag=True, help="Show recovery status and perform validation")
 @click.pass_context
-def status(ctx, job_id: str | None, output_json: bool):
+def status(ctx, job_id: str | None, output_json: bool, recovery: bool):
     """Display job status and manifest."""
     jobs_dir = ctx.obj["JOBS_DIR"]
     click.echo("📋 Executing 'logist job status'")
     if final_job_id := get_job_id(ctx, job_id):
         try:
             status_data = manager.get_job_status(final_job_id, jobs_dir)
+            job_dir = get_job_dir(ctx, final_job_id)
+
+            # Recovery validation
+            if job_dir:
+                try:
+                    recovery_result = validate_state_persistence(job_dir)
+                    if recovery_result["recovered"]:
+                        click.secho(f"🔄 Recovery performed: {recovery_result['recovery_from']}", fg="blue")
+                        # Reload status data after recovery
+                        status_data = manager.get_job_status(final_job_id, jobs_dir)
+
+                    if recovery_result["errors"]:
+                        for error in recovery_result["errors"]:
+                            click.secho(f"⚠️  Recovery warning: {error}", fg="yellow")
+
+                except (RecoveryError, Exception) as e:
+                    click.secho(f"⚠️  Recovery validation failed: {e}", fg="yellow")
+
+            # Show recovery status if requested
+            if recovery and job_dir:
+                try:
+                    recovery_status = get_recovery_status(job_dir)
+                    click.echo("🔧 Recovery Status:")
+                    click.echo(f"   🗂️  Backups available: {recovery_status['backups_available']}")
+                    if recovery_status['last_backup']:
+                        click.echo(f"   🕐 Last backup: {recovery_status['last_backup']}")
+                    click.echo(f"   💔 State consistent: {recovery_status['state_consistent']}")
+                    click.echo(f"   🚨 Recovery needed: {recovery_status['recovery_needed']}")
+                    if recovery_status['hung_process_detected']:
+                        click.echo("   ⏰ Hung process detected!")
+                except Exception as e:
+                    click.secho(f"⚠️  Could not get recovery status: {e}", fg="yellow")
+
             if output_json:
                 click.echo(json.dumps(status_data, indent=2))
             else:
