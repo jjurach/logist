@@ -59,7 +59,7 @@ The `job run` command will primarily involve a loop that calls the core job exec
 2. **Design:** Plan the implementation approach, considering the interaction with `job_step` and state management.
 3. **Build:** Implement the `run` subcommand in `logist/cli.py` and the core execution loop in `logist/job_processor.py`.
 4. **Test:** Add and run unit tests and update the demo script.
-5. **Document:** Ensure `job run` command usage is documented (e.g., in `docs/05_cli_reference.md` if applicable, though not explicitly requested in _meta_prompt_creation.md).
+5. **Document:** Ensure `job run` command usage is documented (e.g., in `docs/05_cli_reference.md` if applicable)
 6. **Verify:** Ensure all requirements are met.
 7. **Commit:** Follow the Git Status and Commit protocol in `_meta_prompt_instructions.md`.
 
