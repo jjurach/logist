@@ -155,6 +155,14 @@ if [ $? -ne 0 ]; then
 fi
 echo "✅ Job rerun error handling for invalid step number verified"
 
+# Unit 9: job_chat_command
+echo "📋 Unit 9: logist job chat state validation"
+logist job chat my-first-job 2>&1 | grep -q "Job 'my-first-job' has no execution history"
+if [ $? -ne 0 ]; then
+    echo "❌ Job chat should fail for job with no execution history"
+    exit 1
+fi
+echo "✅ Job chat correctly rejects jobs with no execution history"
 
 echo ""
 echo "🎉 All implemented units passed!"
@@ -166,5 +174,6 @@ echo "✅ Job selected successfully"
 echo "✅ Job workspace setup executed"
 echo "✅ Role list command executed and roles verified"
 echo "✅ Job rerun command executed and scenarios verified"
+echo "✅ Job chat command state validation working"
 echo ""
 echo "🎉 Demo script completed successfully"

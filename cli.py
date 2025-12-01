@@ -126,16 +126,16 @@ class LogistEngine:
             # 4. Assemble job context (simplified for now)
             workspace_path = os.path.join(job_dir, "workspace")
             context = assemble_job_context(job_dir, manifest, role_config)
-            
+
             # 5. Execute LLM with Cline
             processed_response, execution_time = execute_llm_with_cline(
                 context=context,
                 workspace_dir=workspace_path,
                 instruction_files=[role_config_path] # Pass role config as instruction
             )
-            
+
             response_action = processed_response.get("action")
-            
+
             click.secho(f"   ✅ LLM responded with action: {response_action}", fg="green")
             click.echo(f"   📝 Summary for Supervisor: {processed_response.get('summary_for_supervisor', 'N/A')}")
             click.echo(f"   ⏱️  Execution time: {execution_time:.2f} seconds")
@@ -150,7 +150,7 @@ class LogistEngine:
 
             # 7. Update job manifest
             new_status = transition_state(current_status, active_role, response_action)
-            
+
             history_entry = {
                 "role": active_role,
                 "action": response_action,
@@ -160,7 +160,7 @@ class LogistEngine:
                 "new_status": new_status,
                 "evidence_files": evidence_files # Store reported evidence files
             }
-            
+
             update_job_manifest(
                 job_dir=job_dir,
                 new_status=new_status,
@@ -173,6 +173,112 @@ class LogistEngine:
 
         except (JobProcessorError, JobStateError, JobContextError, Exception) as e:
             click.secho(f"❌ Error during job step for '{job_id}': {e}", fg="red")
+            raw_cline_output = None
+            if isinstance(e, JobProcessorError) and hasattr(e, 'full_output'):
+                raw_cline_output = e.full_output # If CLINE execution failed, this might be present
+            handle_execution_error(job_dir, job_id, e, raw_output=raw_cline_output)
+            return False
+
+    def restep_single_step(self, ctx: click.Context, job_id: str, job_dir: str, step_number: int, dry_run: bool = False) -> bool:
+        """Re-execute a specific single step (phase) of a job for debugging purposes."""
+        manager.setup_workspace(job_dir) # Ensure workspace is ready
+
+        if dry_run:
+            click.secho("   → Defensive setting detected: --dry-run", fg="yellow")
+            click.echo(f"   → Would: Re-execute step {step_number} for job '{job_id}' with mock data")
+            return True
+
+        click.echo(f"🔄 [LOGIST] Re-executing step {step_number} for job '{job_id}'")
+
+        try:
+            # 1. Load job manifest and validate step number
+            manifest = load_job_manifest(job_dir)
+            phases = manifest.get("phases", [])
+
+            if not phases:
+                raise JobStateError("Job has no defined phases. Cannot restep.")
+
+            if step_number >= len(phases) or step_number < 0:
+                available_steps = len(phases)
+                raise JobStateError(f"Invalid step number {step_number}. Job has {available_steps} phases (0-{available_steps-1}).")
+
+            target_phase = phases[step_number]
+            target_phase_name = target_phase["name"]
+            click.echo(f"   → Target Phase: {target_phase_name} (step {step_number})")
+
+            # 2. Determine active role for this phase
+            # For restep, we need to figure out which role should execute this phase
+            # This logic matches the current state machine - we use a simple default
+            active_role = target_phase.get("active_agent", "Worker")  # Default to Worker
+            click.echo(f"   → Active Role: {active_role}")
+
+            # 3. Load role configuration
+            role_config_path = os.path.join(ctx.obj["JOBS_DIR"], f"{active_role.lower()}.json")
+            if not os.path.exists(role_config_path):
+                raise JobContextError(f"Role configuration not found for '{active_role}' at {role_config_path}")
+            with open(role_config_path, 'r') as f:
+                role_config = json.load(f)
+
+            # 4. Prepare manifest for this specific step execution
+            # Create a temporary manifest with current_phase set to the target phase
+            restep_manifest = manifest.copy()
+            restep_manifest["current_phase"] = target_phase_name
+
+            # 5. Assemble job context for the target phase
+            workspace_path = os.path.join(job_dir, "workspace")
+            context = assemble_job_context(job_dir, restep_manifest, role_config)
+
+            # 6. Execute LLM with Cline
+            processed_response, execution_time = execute_llm_with_cline(
+                context=context,
+                workspace_dir=workspace_path,
+                instruction_files=[role_config_path] # Pass role config as instruction
+            )
+
+            response_action = processed_response.get("action")
+
+            click.secho(f"   ✅ LLM responded with action: {response_action}", fg="green")
+            click.echo(f"   📝 Summary for Supervisor: {processed_response.get('summary_for_supervisor', 'N/A')}")
+            click.echo(f"   ⏱️  Execution time: {execution_time:.2f} seconds")
+
+            # 7. Validate evidence files
+            evidence_files = processed_response.get("evidence_files", [])
+            if evidence_files:
+                validated_evidence = validate_evidence_files(evidence_files, workspace_path)
+                click.echo(f"   📁 Validated evidence files: {', '.join(validated_evidence)}")
+            else:
+                click.echo("   📁 No evidence files reported.")
+
+            # 8. Update job manifest with step-specific history
+            # For restep, we don't change the overall job status, just record the restep action
+            current_status = manifest.get("status", "PENDING")
+
+            history_entry = {
+                "event": "RESTEP",
+                "step_number": step_number,
+                "phase_name": target_phase_name,
+                "role": active_role,
+                "action": response_action,
+                "summary": processed_response.get("summary_for_supervisor"),
+                "metrics": processed_response.get("metrics", {}),
+                "cline_task_id": processed_response.get("cline_task_id"),
+                "evidence_files": evidence_files
+            }
+
+            # Update metrics and add history entry, but preserve overall status
+            update_job_manifest(
+                job_dir=job_dir,
+                # new_status unchanged - restep doesn't affect overall job status
+                cost_increment=processed_response.get("metrics", {}).get("cost_usd", 0.0),
+                time_increment=execution_time,
+                history_entry=history_entry
+            )
+            click.secho(f"   🔄 Restep completed for phase '{target_phase_name}' (step {step_number})", fg="blue")
+            click.secho(f"   📊 Job status remains: {current_status}", fg="cyan")
+            return True
+
+        except (JobProcessorError, JobStateError, JobContextError, Exception) as e:
+            click.secho(f"❌ Error during job restep for '{job_id}' step {step_number}: {e}", fg="red")
             raw_cline_output = None
             if isinstance(e, JobProcessorError) and hasattr(e, 'full_output'):
                 raw_cline_output = e.full_output # If CLINE execution failed, this might be present
@@ -537,7 +643,8 @@ def get_job_dir(ctx, job_id: str) -> str | None:
     try:
         with open(jobs_index_path, 'r') as f:
             jobs_index = json.load(f)
-        return jobs_index["jobs"].get(job_id)
+        jobs_map = jobs_index.get("jobs", {})
+        return jobs_map.get(job_id)
     except (json.JSONDecodeError, OSError):
         return None
 
@@ -692,6 +799,76 @@ def status(ctx, job_id: str | None, output_json: bool):
             click.secho(f"❌ {e}", fg="red")
     else:
         click.secho("❌ No job ID provided and no current job is selected.", fg="red")
+
+
+@job.command(name="chat")
+@click.argument("job_id", required=False)
+@click.pass_context
+def job_chat(ctx, job_id: str | None):
+    """Start an interactive chat session with the Cline task associated with a job."""
+    click.echo("💬 Executing 'logist job chat'")
+
+    # Get job ID
+    final_job_id = get_job_id(ctx, job_id)
+    if not final_job_id:
+        click.secho("❌ No job ID provided and no current job is selected.", fg="red")
+        return
+
+    # Get job directory
+    job_dir = get_job_dir(ctx, final_job_id)
+    if not job_dir:
+        click.secho(f"❌ Could not find job directory for '{final_job_id}'.", fg="red")
+        return
+
+    try:
+        # Load job manifest
+        manifest = load_job_manifest(job_dir)
+        current_status = manifest.get("status", "UNKNOWN")
+
+        # Validate job state - cannot chat during active execution
+        if current_status in ["RUNNING", "REVIEWING"]:
+            click.secho(f"❌ Cannot chat with job '{final_job_id}' in '{current_status}' state.", fg="red")
+            click.echo("   💡 Chat is only available when the job is not actively running.")
+            click.echo("   💡 Valid states: PENDING, INTERVENTION_REQUIRED, SUCCESS, CANCELED, etc.")
+            return
+
+        # Extract cline_task_id from history
+        history = manifest.get("history", [])
+        if not history:
+            click.secho(f"❌ Job '{final_job_id}' has no execution history - cannot chat.", fg="red")
+            click.echo("   💡 Run the job first with 'logist job step' to create a chat session.")
+            return
+
+        # Get the most recent history entry with a cline_task_id
+        cline_task_id = None
+        for entry in reversed(history):  # Most recent first
+            if "cline_task_id" in entry and entry["cline_task_id"]:
+                cline_task_id = entry["cline_task_id"]
+                break
+
+        if not cline_task_id:
+            click.secho(f"❌ No Cline task ID found in job '{final_job_id}' history.", fg="red")
+            click.echo("   💡 This job may not have been executed yet or has no associated Cline tasks.")
+            return
+
+        click.secho(f"⚡ Connecting to Cline task '{cline_task_id}' for job '{final_job_id}'", fg="green")
+
+        # Execute cline task chat
+        import subprocess
+        cmd = ["cline", "task", "chat", cline_task_id]
+
+        # Run the command - this will block and allow interactive chat
+        try:
+            subprocess.run(cmd, check=True)
+        except subprocess.CalledProcessError as e:
+            click.secho(f"❌ Failed to start chat session: {e}", fg="red")
+        except KeyboardInterrupt:
+            click.echo("\n💬 Chat session ended.")
+
+    except JobStateError as e:
+        click.secho(f"❌ Error accessing job manifest: {e}", fg="red")
+    except Exception as e:
+        click.secho(f"❌ Unexpected error during chat: {e}", fg="red")
 
 
 @job.command(name="list")

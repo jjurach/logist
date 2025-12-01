@@ -199,6 +199,165 @@ class TestCLICommands:
         assert "- Analyst: Data analysis and reporting specialist." in result_list.output
 
 
+class TestJobChatCommand:
+    """Test the job chat command functionality."""
+
+    def setup_method(self):
+        """Setup CLI runner."""
+        self.runner = CliRunner()
+
+    def test_job_chat_valid_state(self, tmp_path, monkeypatch):
+        """Test that job chat works when job is in a valid state (SUCCESS)."""
+        jobs_dir = tmp_path / "jobs"
+        jobs_dir.mkdir()
+
+        # Initialize jobs directory and create a job
+        self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "init"])
+        job_dir = tmp_path / "test-job"
+        job_dir.mkdir()
+        self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "job", "create", str(job_dir)])
+
+        # Update job manifest to SUCCESS state with history containing cline_task_id
+        manifest_path = job_dir / "job_manifest.json"
+        with open(manifest_path, 'r') as f:
+            manifest = json.load(f)
+        manifest["status"] = "SUCCESS"
+        manifest["history"] = [
+            {
+                "role": "Worker",
+                "action": "COMPLETED",
+                "cline_task_id": "test-task-123",
+                "timestamp": "2025-01-01T00:00:00"
+            }
+        ]
+        with open(manifest_path, 'w') as f:
+            json.dump(manifest, f)
+
+        # Mock subprocess.run to avoid actually calling cline
+        mock_subprocess = lambda *args, **kwargs: None  # Mock function that does nothing
+        monkeypatch.setattr("logist.cli.subprocess.run", mock_subprocess)
+
+        result = self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "job", "chat", "test-job"])
+        assert result.exit_code == 0
+        assert "⚡ Connecting to Cline task 'test-task-123' for job 'test-job'" in result.output
+
+    def test_job_chat_invalid_state_running(self, tmp_path):
+        """Test that job chat prevents interaction when job is RUNNING."""
+        jobs_dir = tmp_path / "jobs"
+        jobs_dir.mkdir()
+
+        # Initialize jobs directory and create a job
+        self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "init"])
+        job_dir = tmp_path / "running-job"
+        job_dir.mkdir()
+        self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "job", "create", str(job_dir)])
+
+        # Update job manifest to RUNNING state
+        manifest_path = job_dir / "job_manifest.json"
+        with open(manifest_path, 'r') as f:
+            manifest = json.load(f)
+        manifest["status"] = "RUNNING"
+        with open(manifest_path, 'w') as f:
+            json.dump(manifest, f)
+
+        result = self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "job", "chat", "running-job"])
+        assert result.exit_code == 0
+        assert "❌ Cannot chat with job 'running-job' in 'RUNNING' state" in result.output
+        assert "💡 Chat is only available when the job is not actively running" in result.output
+
+    def test_job_chat_invalid_state_reviewing(self, tmp_path):
+        """Test that job chat prevents interaction when job is REVIEWING."""
+        jobs_dir = tmp_path / "jobs"
+        jobs_dir.mkdir()
+
+        # Initialize jobs directory and create a job
+        self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "init"])
+        job_dir = tmp_path / "reviewing-job"
+        job_dir.mkdir()
+        self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "job", "create", str(job_dir)])
+
+        # Update job manifest to REVIEWING state
+        manifest_path = job_dir / "job_manifest.json"
+        with open(manifest_path, 'r') as f:
+            manifest = json.load(f)
+        manifest["status"] = "REVIEWING"
+        with open(manifest_path, 'w') as f:
+            json.dump(manifest, f)
+
+        result = self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "job", "chat", "reviewing-job"])
+        assert result.exit_code == 0
+        assert "❌ Cannot chat with job 'reviewing-job' in 'REVIEWING' state" in result.output
+
+    def test_job_chat_no_history(self, tmp_path):
+        """Test that job chat fails when job has no execution history."""
+        jobs_dir = tmp_path / "jobs"
+        jobs_dir.mkdir()
+
+        # Initialize jobs directory and create a job
+        self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "init"])
+        job_dir = tmp_path / "new-job"
+        job_dir.mkdir()
+        self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "job", "create", str(job_dir)])
+
+        # Job manifest should have empty history by default
+        result = self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "job", "chat", "new-job"])
+        assert result.exit_code == 0
+        assert "❌ Job 'new-job' has no execution history - cannot chat" in result.output
+        assert "💡 Run the job first with 'logist job step' to create a chat session" in result.output
+
+    def test_job_chat_no_cline_task_id(self, tmp_path):
+        """Test that job chat fails when job history has no cline_task_id."""
+        jobs_dir = tmp_path / "jobs"
+        jobs_dir.mkdir()
+
+        # Initialize jobs directory and create a job
+        self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "init"])
+        job_dir = tmp_path / "old-job"
+        job_dir.mkdir()
+        self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "job", "create", str(job_dir)])
+
+        # Update job manifest with history but no cline_task_id
+        manifest_path = job_dir / "job_manifest.json"
+        with open(manifest_path, 'r') as f:
+            manifest = json.load(f)
+        manifest["status"] = "SUCCESS"
+        manifest["history"] = [
+            {
+                "role": "Worker",
+                "action": "COMPLETED",
+                "timestamp": "2025-01-01T00:00:00"
+                # Missing cline_task_id
+            }
+        ]
+        with open(manifest_path, 'w') as f:
+            json.dump(manifest, f)
+
+        result = self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "job", "chat", "old-job"])
+        assert result.exit_code == 0
+        assert "❌ No Cline task ID found in job 'old-job' history" in result.output
+
+    def test_job_chat_no_job_selected(self, tmp_path):
+        """Test that job chat fails when no job is selected and none provided."""
+        jobs_dir = tmp_path / "jobs"
+        jobs_dir.mkdir()
+
+        result = self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "job", "chat"])
+        assert result.exit_code == 0
+        assert "❌ No job ID provided and no current job is selected" in result.output
+
+    def test_job_chat_non_existent_job(self, tmp_path):
+        """Test that job chat fails with non-existent job ID."""
+        jobs_dir = tmp_path / "jobs"
+        jobs_dir.mkdir()
+
+        # Initialize jobs directory
+        self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "init"])
+
+        result = self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "job", "chat", "nonexistent-job"])
+        assert result.exit_code == 0
+        assert "❌ Could not find job directory for 'nonexistent-job'" in result.output
+
+
 class TestRerunCommand:
     """Test the job rerun command functionality."""
 
