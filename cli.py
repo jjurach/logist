@@ -363,6 +363,89 @@ class LogistEngine:
             handle_execution_error(job_dir, job_id, e, raw_output=raw_cline_output)
             return False
 
+    def restep_job(self, ctx: click.Context, job_id: str, job_dir: str, step_number: int, dry_run: bool = False) -> bool:
+        """
+        Rewind job execution to a previous checkpoint within the current run.
+
+        This restores the job state to a specific step (checkpoint) by:
+        1. Validating the target step exists
+        2. Setting current_phase to the target step's phase
+        3. Preserving full history (unlike rerun which clears it)
+        4. Resetting metrics to exclude steps after the checkpoint
+        5. Recording the restep event in history
+        """
+        click.echo(f"⏪ [LOGIST] Rewinding job '{job_id}' to step {step_number}")
+
+        if dry_run:
+            click.secho("   → Defensive setting detected: --dry-run", fg="yellow")
+            click.echo(f"   → Would: Restore job state to step {step_number} checkpoint")
+            return True
+
+        try:
+            # 1. Load and validate job manifest
+            manifest = load_job_manifest(job_dir)
+            phases = manifest.get("phases", [])
+
+            if not phases:
+                click.secho("❌ Job has no defined phases. Cannot restep.", fg="red")
+                return False
+
+            if step_number >= len(phases) or step_number < 0:
+                available_steps = len(phases)
+                click.secho(f"❌ Invalid step number {step_number}. Job has {available_steps} phases (0-{available_steps-1}).", fg="red")
+                return False
+
+            target_phase = phases[step_number]
+            target_phase_name = target_phase["name"]
+            click.echo(f"   → Target checkpoint: step {step_number} ('{target_phase_name}')")
+
+            # 2. Record the current state before restep for history
+            current_phase_before = manifest.get("current_phase")
+            current_status_before = manifest.get("status")
+
+            # 3. Calculate metrics reset
+            # For restep, we keep all metrics since we're staying within the same run
+            # (unlike rerun which resets metrics to zero)
+            metrics_before = manifest.get("metrics", {}).copy()
+
+            # 4. Restore job state to checkpoint
+            manifest["current_phase"] = target_phase_name
+            # Status remains unchanged for restep - we're just rewinding position
+
+            # 5. Record restep event in history
+            from datetime import datetime
+            history_entry = {
+                "timestamp": datetime.now().isoformat(),
+                "event": "RESTEP",
+                "action": f"Restepped to checkpoint step {step_number} ('{target_phase_name}')",
+                "previous_phase": current_phase_before,
+                "previous_status": current_status_before,
+                "target_step": step_number,
+                "target_phase": target_phase_name,
+                "metrics_before_restep": metrics_before
+            }
+
+            # Append to history (don't clear like rerun does)
+            if "history" not in manifest:
+                manifest["history"] = []
+            manifest["history"].append(history_entry)
+
+            # 6. Save updated manifest
+            manifest_path = os.path.join(job_dir, "job_manifest.json")
+            with open(manifest_path, 'w') as f:
+                json.dump(manifest, f, indent=2)
+
+            click.secho(f"   ✅ Job '{job_id}' successfully rewound to checkpoint", fg="green")
+            click.echo(f"   📍 Current phase: {target_phase_name} (step {step_number})")
+            click.echo(f"   📊 Status unchanged: {current_status_before}")
+            click.echo(f"   📚 History: Restep event recorded")
+
+            return True
+
+        except (JobStateError, OSError, KeyError) as e:
+            click.secho(f"❌ Error during job restep for '{job_id}': {e}", fg="red")
+            return False
+
 
 class JobManager:
     """Manages job creation, selection, and status."""
@@ -845,6 +928,55 @@ def rerun(ctx, job_id: str, step: int | None):
         engine.rerun_job(ctx, job_id, job_dir, start_step=step)
     except Exception as e:
         click.secho(f"❌ Error during job rerun: {e}", fg="red")
+
+
+@job.command(name="restep")
+@click.argument("job_id", required=False)
+@click.option(
+    "--step",
+    type=int,
+    required=True,
+    help="Zero-indexed phase number to rewind to as a checkpoint."
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Show what would be restored without making changes."
+)
+@click.pass_context
+def restep(ctx, job_id: str | None, step: int, dry_run: bool):
+    """Rewind job execution to a previous checkpoint within the current run."""
+    click.echo("⏪ Executing 'logist job restep'")
+
+    # Get job ID
+    final_job_id = get_job_id(ctx, job_id)
+    if not final_job_id:
+        click.secho("❌ No job ID provided and no current job is selected.", fg="red")
+        return
+
+    # Get job directory
+    job_dir = get_job_dir(ctx, final_job_id)
+    if job_dir is None:
+        click.secho(f"❌ Job '{final_job_id}' not found.", fg="red")
+        return
+
+    # Validate step number
+    if step < 0:
+        click.secho("❌ Step number must be a non-negative integer.", fg="red")
+        return
+
+    try:
+        # Execute the restep logic
+        success = engine.restep_job(ctx, final_job_id, job_dir, step, dry_run=dry_run)
+        if success:
+            if dry_run:
+                click.secho(f"   ✅ Dry run completed - no changes made", fg="blue")
+            else:
+                click.secho(f"   ✅ Job '{final_job_id}' successfully rewound to step {step}", fg="green")
+        else:
+            click.secho(f"❌ Failed to restep job '{final_job_id}'", fg="red")
+    except Exception as e:
+        click.secho(f"❌ Error during job restep: {e}", fg="red")
 
 
 @job.command()
