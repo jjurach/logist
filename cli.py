@@ -826,17 +826,36 @@ def init_command(jobs_dir: str) -> bool:
     """Initialize the jobs directory with default configurations."""
     try:
         os.makedirs(jobs_dir, exist_ok=True)
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        schemas_dir = os.path.join(script_dir, "..", "schemas", "roles")
+
+        # Find schemas directory using pkg_resources or fallback paths
+        schemas_dir = None
+        try:
+            import pkg_resources
+            schemas_dir = pkg_resources.resource_filename('logist', 'schemas/roles')
+        except ImportError:
+            # pkg_resources not available, try fallback paths
+            schemas_dir = None
+
+        if not schemas_dir:
+            # Try development source code location first
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            dev_schemas_dir = os.path.join(script_dir, "..", "..", "schemas", "roles")
+            if os.path.exists(dev_schemas_dir):
+                schemas_dir = dev_schemas_dir
+            else:
+                # Ultimate fallback - hardcoded dev path (temporary for development)
+                fallback_schemas_dir = "/home/phaedrus/AiSpace/logist/schemas/roles"
+                if os.path.exists(fallback_schemas_dir):
+                    schemas_dir = fallback_schemas_dir
 
         roles_to_copy = ["worker.json", "supervisor.json"]
         for role_file in roles_to_copy:
-            schema_path = os.path.join(schemas_dir, role_file)
+            schema_path = os.path.join(schemas_dir, role_file) if schemas_dir else None
             dest_path = os.path.join(jobs_dir, role_file)
-            if os.path.exists(schema_path):
+            if schemas_dir and os.path.exists(schema_path):
                 shutil.copy2(schema_path, dest_path)
             else:
-                click.secho(f"⚠️  Warning: Schema file '{role_file}' not found in '{schemas_dir}'", fg="yellow")
+                click.secho(f"⚠️  Warning: Schema file '{role_file}' not found at '{schemas_dir or 'unknown path'}'", fg="yellow")
 
         jobs_index_path = os.path.join(jobs_dir, "jobs_index.json")
         jobs_index_data = {
