@@ -1,5 +1,6 @@
 # logist/job_context.py
 import json
+import os
 from typing import Dict, Any, List, Optional
 
 class JobContextError(Exception):
@@ -117,3 +118,45 @@ Additional Context (Placeholder):
         return json.dumps(context, indent=2)
     else:
         raise ValueError(f"Unsupported format type: {format_type}")
+
+
+def enhance_context_with_previous_outcome(context: Dict[str, Any], job_dir: str) -> Dict[str, Any]:
+    """
+    Enhances job context with previous outcome information for role-specific guidance.
+
+    Args:
+        context: Job context dictionary
+        job_dir: Job directory path
+
+    Returns:
+        Enhanced context dictionary
+    """
+    # Import the function from job_processor
+    from .job_processor import load_previous_outcome
+
+    previous_outcome = load_previous_outcome(job_dir)
+    if previous_outcome is None:
+        return context  # No enhancement needed
+
+    # Add previous outcome to context
+    context["previous_outcome"] = previous_outcome
+
+    # Add role-specific instructions based on previous outcome
+    active_role = context.get("role_name", "").lower()
+
+    if active_role == "worker":
+        context["outcome_instructions"] = (
+            "You have access to the previous step's outcome in previous_outcome. "
+            "Use this to understand what was accomplished in the prior step and "
+            "summarize your work accordingly, noting any struggles or additional "
+            "information that helped you succeed."
+        )
+    elif active_role == "supervisor":
+        context["outcome_instructions"] = (
+            "You have access to the previous step's outcome in previous_outcome. "
+            "Review this to understand what the worker accomplished, assess it "
+            "against the overall objectives, and provide guidance regarding any "
+            "concerns, criticisms, additional research needed, or approval to proceed."
+        )
+
+    return context

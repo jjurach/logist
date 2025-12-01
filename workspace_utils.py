@@ -1,6 +1,7 @@
 import os
 import shutil
 import subprocess
+import re
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 
@@ -359,23 +360,22 @@ def create_job_branch(job_id: str, job_dir: str, base_branch: str = "main") -> D
 
 def setup_isolated_workspace(job_id: str, job_dir: str, base_branch: str = "main") -> Dict[str, Any]:
     """
-    Sets up workspace with branch isolation instead of simple cloning.
+    Sets up workspace by cloning latest git HEAD and copying attachments.
 
-    This provides better isolation and persistence across sessions.
+    This provides clean workspace setup for batch execution with proper file handling.
 
     Args:
         job_id: Unique job identifier
         job_dir: Job directory path
-        base_branch: Base branch to create workspace from
+        base_branch: Base branch (unused, now clones current HEAD)
 
     Returns:
         Dict with setup status and workspace information
     """
     result = {
         "success": False,
-        "branch_created": False,
         "workspace_prepared": False,
-        "branch_name": f"logist/job/{job_id}",
+        "attachments_copied": False,
         "error": None
     }
 
@@ -386,34 +386,30 @@ def setup_isolated_workspace(job_id: str, job_dir: str, base_branch: str = "main
             return result
 
         workspace_dir = os.path.join(job_dir, "workspace")
-        workspace_git = os.path.join(workspace_dir, ".git")
+        attachments_dir = os.path.join(job_dir, "attachments")
 
-        # Check if workspace needs to be created or is already set up
-        if not os.path.exists(workspace_git):
-            # Create fresh workspace directory
-            if os.path.exists(workspace_dir):
-                shutil.rmtree(workspace_dir)
+        # Always create fresh workspace directory for clean state
+        if os.path.exists(workspace_dir):
+            shutil.rmtree(workspace_dir)
 
-            os.makedirs(job_dir, exist_ok=True)
+        os.makedirs(workspace_dir, exist_ok=True)
 
-            # Clone repository
-            subprocess.run(
-                ["git", "clone", git_root, "workspace"],
-                cwd=job_dir,
-                check=True,
-                capture_output=True,
-                text=True
-            )
+        # Clone repository at current HEAD
+        subprocess.run(
+            ["git", "clone", git_root, "workspace"],
+            cwd=job_dir,
+            check=True,
+            capture_output=True,
+            text=True
+        )
 
         result["workspace_prepared"] = True
 
-        # Create isolated branch for this job
-        branch_result = create_job_branch(job_id, job_dir, base_branch)
-        if not branch_result["success"]:
-            result["error"] = f"Failed to create job branch: {branch_result['error']}"
-            return result
+        # Copy attachments if they exist
+        if os.path.exists(attachments_dir) and os.listdir(attachments_dir):
+            shutil.copytree(attachments_dir, os.path.join(workspace_dir, "attachments"))
+            result["attachments_copied"] = True
 
-        result["branch_created"] = True
         result["success"] = True
 
     except subprocess.CalledProcessError as e:
@@ -710,5 +706,143 @@ def cleanup_completed_workspaces(jobs_dir: str, cleanup_policies: Optional[Dict[
     except OSError as e:
         result["errors"].append(f"Directory scan failed: {e}")
         result["success"] = False
+
+    return result
+
+
+def discover_file_arguments(job_dir: str, prompt_file: Optional[str] = None) -> List[str]:
+    """
+    Discovers files that should be passed as --file arguments to cline.
+
+    Scans prompt.md for file references and collects system/role files.
+
+    Args:
+        job_dir: Job directory path
+        prompt_file: Optional specific prompt file, defaults to job_dir/prompt.md
+
+    Returns:
+        List of file paths to include in --file arguments
+    """
+    file_args = []
+
+    # Default prompt file location
+    if prompt_file is None:
+        prompt_file = os.path.join(job_dir, "prompt.md")
+
+    # Scan prompt.md for file references
+    if os.path.exists(prompt_file):
+        try:
+            with open(prompt_file, 'r') as f:
+                prompt_content = f.read()
+
+            # Look for relative file paths in workspace
+            # This is a simple pattern - could be enhanced with more sophisticated parsing
+            workspace_dir = os.path.join(job_dir, "workspace")
+            if os.path.exists(workspace_dir):
+                for root, dirs, files in os.walk(workspace_dir):
+                    # Skip .git directory
+                    if ".git" in dirs:
+                        dirs.remove(".git")
+
+                    for file in files:
+                        rel_path = os.path.relpath(os.path.join(root, file), workspace_dir)
+                        # Simple heuristic: if the file name appears in the prompt
+                        if file in prompt_content:
+                            file_args.append(os.path.join(workspace_dir, rel_path))
+
+        except Exception as e:
+            # Don't fail if prompt scanning fails
+            pass
+
+    # Add system schema file
+    import pkg_resources
+    try:
+        # Try to find system.md in package data
+        system_file = pkg_resources.resource_filename("logist", "schemas/roles/system.md")
+        if os.path.exists(system_file):
+            file_args.append(system_file)
+    except Exception:
+        # Fallback to direct path
+        system_file = os.path.join(os.path.dirname(__file__), "..", "schemas", "roles", "system.md")
+        if os.path.exists(system_file):
+            file_args.append(system_file)
+
+    return file_args
+
+
+def collect_attachment_files(job_dir: str) -> List[str]:
+    """
+    Collects all attachment files for inclusion in context preparation.
+
+    Returns files from job_dir/attachments/ directory.
+
+    Args:
+        job_dir: Job directory path
+
+    Returns:
+        List of attachment file paths
+    """
+    attachments_dir = os.path.join(job_dir, "attachments")
+    attachment_files = []
+
+    if os.path.exists(attachments_dir):
+        for root, dirs, files in os.walk(attachments_dir):
+            for file in files:
+                full_path = os.path.join(root, file)
+                attachment_files.append(full_path)
+
+    return attachment_files
+
+
+def prepare_workspace_attachments(job_dir: str, workspace_dir: str) -> Dict[str, Any]:
+    """
+    Prepares attachments and discovered files for workspace execution.
+
+    This copies attachments to workspace/attachments/ and discovers all files
+    that should be included in cline --file arguments.
+
+    Args:
+        job_dir: Job directory path
+        workspace_dir: Workspace directory path
+
+    Returns:
+        Dict with file preparation information
+    """
+    result = {
+        "success": True,
+        "attachments_copied": [],
+        "discovered_files": [],
+        "file_arguments": [],
+        "error": None
+    }
+
+    try:
+        # Collect attachment files
+        attachments = collect_attachment_files(job_dir)
+        result["attachments_copied"] = attachments
+
+        # Copy attachments to workspace/attachments/
+        workspace_attachments_dir = os.path.join(workspace_dir, "attachments")
+        for attachment in attachments:
+            rel_path = os.path.relpath(attachment, os.path.join(job_dir, "attachments"))
+            dest_path = os.path.join(workspace_attachments_dir, rel_path)
+
+            # Ensure destination directory exists
+            os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+
+            # Copy the file
+            shutil.copy2(attachment, dest_path)
+
+        # Discover files for --file arguments
+        discovered_files = discover_file_arguments(job_dir)
+        result["discovered_files"] = discovered_files
+
+        # Combine all file arguments
+        file_arguments = attachments + discovered_files
+        result["file_arguments"] = list(set(file_arguments))  # Remove duplicates
+
+    except Exception as e:
+        result["success"] = False
+        result["error"] = str(e)
 
     return result

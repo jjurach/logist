@@ -15,7 +15,10 @@ import click
 
 from logist import workspace_utils # Import the new module
 from logist.job_state import JobStateError, load_job_manifest, get_current_state_and_role, update_job_manifest, transition_state, JobStates
-from logist.job_processor import execute_llm_with_cline, handle_execution_error, validate_evidence_files, JobProcessorError
+from logist.job_processor import (
+    execute_llm_with_cline, handle_execution_error, validate_evidence_files, JobProcessorError,
+    save_latest_outcome, prepare_outcome_for_attachments, enhance_context_with_previous_outcome
+)
 from logist.job_context import assemble_job_context, JobContextError # Now exists
 from logist.recovery import validate_state_persistence, get_recovery_status, RecoveryError
 from logist.metrics_utils import check_thresholds_before_execution, calculate_detailed_metrics, generate_cost_projections, export_metrics_to_csv, ThresholdExceededError
@@ -101,7 +104,7 @@ class LogistEngine:
             json.dump(manifest, f, indent=2)
 
     def step_job(self, ctx: click.Context, job_id: str, job_dir: str, dry_run: bool = False, model: str = "grok-code-fast-1") -> bool:
-        """Execute single phase of job and pause."""
+        """Execute single phase of job and pause with enhanced workspace preparation."""
         manager.setup_workspace(job_dir) # Ensure workspace is ready
 
         # Recovery validation - check for hung processes and recover if needed
@@ -135,25 +138,44 @@ class LogistEngine:
                 click.secho(f"❌ {e}", fg="red")
                 return False
 
-            # 2. Determine current phase and active role
+            # 3. Determine current phase and active role
             current_phase_name, active_role = get_current_state_and_role(manifest)
             click.echo(f"   → Current Phase: {current_phase_name}, Active Role: {active_role}")
 
-            # 3. Load role configuration
+            # 4. Load role configuration
             role_config_path = os.path.join(ctx.obj["JOBS_DIR"], f"{active_role.lower()}.json")
             if not os.path.exists(role_config_path):
                 raise JobContextError(f"Role configuration not found for '{active_role}' at {role_config_path}")
             with open(role_config_path, 'r') as f:
                 role_config = json.load(f)
 
-            # 4. Assemble job context (simplified for now)
-            workspace_path = os.path.join(job_dir, "workspace")
-            context = assemble_job_context(job_dir, manifest, role_config)
+            # 5. Prepare workspace with attachments and file discovery
+            workspace_dir = os.path.join(job_dir, "workspace")
+            prep_result = workspace_utils.prepare_workspace_attachments(job_dir, workspace_dir)
+            if prep_result["success"]:
+                if prep_result["attachments_copied"]:
+                    click.echo(f"   📎 Copied {len(prep_result['attachments_copied'])} attachments to workspace")
+                if prep_result["discovered_files"]:
+                    click.echo(f"   🔍 Discovered {len(prep_result['discovered_files'])} context files")
+            else:
+                click.secho(f"   ⚠️  Workspace preparation warning: {prep_result['error']}", fg="yellow")
 
-            # 5. Execute LLM with Cline
+            # 6. Prepare outcome attachments from previous step
+            outcome_prep = prepare_outcome_for_attachments(job_dir, workspace_dir)
+            if outcome_prep["attachments_added"]:
+                click.echo(f"   🏆 Prepared outcome data from previous {len(outcome_prep['attachments_added'])} steps")
+
+            # 7. Assemble job context with enhanced preparation
+            context = assemble_job_context(job_dir, manifest, role_config)
+            context = enhance_context_with_previous_outcome(context, job_dir)
+
+            # 8. Execute LLM with Cline using discovered file arguments
+            file_arguments = prep_result["file_arguments"] + outcome_prep["attachments_added"] if prep_result["success"] else []
+
             processed_response, execution_time = execute_llm_with_cline(
                 context=context,
-                workspace_dir=workspace_path,
+                workspace_dir=workspace_dir,
+                file_arguments=file_arguments,
                 instruction_files=[role_config_path] # Pass role config as instruction
             )
 
@@ -163,15 +185,22 @@ class LogistEngine:
             click.echo(f"   📝 Summary for Supervisor: {processed_response.get('summary_for_supervisor', 'N/A')}")
             click.echo(f"   ⏱️  Execution time: {execution_time:.2f} seconds")
 
-            # 6. Validate evidence files
+            # 9. Save outcome to latest-outcome.json
+            outcome_save = save_latest_outcome(job_dir, processed_response)
+            if outcome_save["success"]:
+                click.echo("   💾 Saved LLM response to latest-outcome.json")
+            else:
+                click.secho(f"   ⚠️  Failed to save outcome: {outcome_save['error']}", fg="yellow")
+
+            # 10. Validate evidence files
             evidence_files = processed_response.get("evidence_files", [])
             if evidence_files:
-                validated_evidence = validate_evidence_files(evidence_files, workspace_path)
+                validated_evidence = validate_evidence_files(evidence_files, workspace_dir)
                 click.echo(f"   📁 Validated evidence files: {', '.join(validated_evidence)}")
             else:
                 click.echo("   📁 No evidence files reported.")
 
-            # 7. Update job manifest
+            # 11. Update job manifest
             new_status = transition_state(current_status, active_role, response_action)
 
             history_entry = {
@@ -181,7 +210,8 @@ class LogistEngine:
                 "metrics": processed_response.get("metrics", {}),
                 "cline_task_id": processed_response.get("cline_task_id"),
                 "new_status": new_status,
-                "evidence_files": evidence_files # Store reported evidence files
+                "evidence_files": evidence_files, # Store reported evidence files
+                "file_attachments": len(file_arguments) if file_arguments else 0
             }
 
             update_job_manifest(
@@ -193,7 +223,7 @@ class LogistEngine:
             )
             click.secho(f"   🔄 Job status updated to: {new_status}", fg="blue")
 
-            # Perform git commit for evidence files and changes
+            # 12. Perform git commit for evidence files and changes
             try:
                 commit_summary = processed_response.get("summary_for_supervisor", f"{active_role} step: {current_phase_name}")
                 commit_result = workspace_utils.perform_git_commit(
@@ -2265,6 +2295,116 @@ def init(ctx):
         click.echo("   📎 Copied worker.json and supervisor.json")
     else:
         click.secho("❌ Failed to initialize jobs directory.", fg="red")
+
+
+@job.command(name="preview")
+@click.argument("job_id", required=False)
+@click.option(
+    "--detailed",
+    is_flag=True,
+    help="Show detailed context preparation information."
+)
+@click.pass_context
+def preview_job(ctx, job_id: str | None, detailed: bool):
+    """Preview job execution context and file preparation."""
+    click.echo("👁️  Executing 'logist job preview'")
+
+    # Get job ID
+    final_job_id = get_job_id(ctx, job_id)
+    if not final_job_id:
+        click.secho("❌ No job ID provided and no current job is selected.", fg="red")
+        return
+
+    job_dir = get_job_dir(ctx, final_job_id)
+    if not job_dir:
+        click.secho(f"❌ Job '{final_job_id}' not found.", fg="red")
+        return
+
+    try:
+        # Load job manifest
+        manifest = load_job_manifest(job_dir)
+        current_status = manifest.get("status", "UNKNOWN")
+
+        click.echo(f"🔍 Preview for Job '{final_job_id}'")
+        click.echo("=" * 50)
+        click.echo(f"   📁 Job Directory: {job_dir}")
+
+        # Setup workspace for preview
+        manager.setup_workspace(job_dir)
+
+        # Determine current phase and role
+        current_phase_name, active_role = get_current_state_and_role(manifest)
+        click.echo(f"   📍 Current Phase: {current_phase_name}")
+        click.echo(f"   👤 Active Role: {active_role}")
+        click.echo(f"   📊 Status: {current_status}")
+
+        # Load role configuration
+        role_config_path = os.path.join(ctx.obj["JOBS_DIR"], f"{active_role.lower()}.json")
+        if os.path.exists(role_config_path):
+            with open(role_config_path, 'r') as f:
+                role_config = json.load(f)
+            click.echo(f"   📋 Role Config: {role_config_path}")
+        else:
+            click.secho(f"   ⚠️  Role config not found: {role_config_path}", fg="yellow")
+            return
+
+        if detailed:
+            click.echo("\n🔧 Detailed Context Preparation:")
+
+            # Prepare workspace with attachments and file discovery
+            workspace_dir = os.path.join(job_dir, "workspace")
+            prep_result = workspace_utils.prepare_workspace_attachments(job_dir, workspace_dir)
+
+            if prep_result["success"]:
+                if prep_result["attachments_copied"]:
+                    click.echo(f"   📎 Attachments copied: {len(prep_result['attachments_copied'])} files")
+                    for attachment in prep_result["attachments_copied"][:5]:  # Show first 5
+                        click.echo(f"      • {os.path.relpath(attachment, job_dir)}")
+                    if len(prep_result["attachments_copied"]) > 5:
+                        click.echo(f"      ... and {len(prep_result['attachments_copied']) - 5} more")
+
+                if prep_result["discovered_files"]:
+                    click.echo(f"   🔍 Files discovered: {len(prep_result['discovered_files'])} files")
+                    for discovered_file in prep_result["discovered_files"][:5]:  # Show first 5
+                        click.echo(f"      • {os.path.basename(discovered_file)}")
+                    if len(prep_result["discovered_files"]) > 5:
+                        click.echo(f"      ... and {len(prep_result['discovered_files']) - 5} more")
+
+                click.echo(f"   📄 Total file arguments: {len(prep_result['file_arguments'])}")
+
+                # Prepare outcome attachments
+                outcome_prep = prepare_outcome_for_attachments(job_dir, workspace_dir)
+                if outcome_prep["attachments_added"]:
+                    click.echo(f"   🏆 Previous outcomes prepared: {len(outcome_prep['attachments_added'])} files")
+                    for outcome_file in outcome_prep["attachments_added"]:
+                        click.echo(f"      • {os.path.relpath(outcome_file, job_dir)}")
+
+                total_files = len(prep_result["file_arguments"]) + len(outcome_prep["attachments_added"])
+                click.echo(f"   🎯 Total files for --file arguments: {total_files}")
+
+            else:
+                click.secho(f"   ⚠️  Workspace preparation failed: {prep_result['error']}", fg="yellow")
+
+            click.echo("\n📋 Context Summary:")
+            context = assemble_job_context(job_dir, manifest, role_config)
+            context = enhance_context_with_previous_outcome(context, job_dir)
+
+            click.echo(f"   📝 Job ID: {context.get('job_id')}")
+            click.echo(f"   🎭 Role: {context.get('role_name')}")
+            click.echo(f"   📊 History entries: {len(manifest.get('history', []))}")
+
+            previous_outcome = context.get("previous_outcome")
+            if previous_outcome:
+                click.echo(f"   🏆 Previous outcome available: {previous_outcome.get('action', 'unknown')}")
+
+            outcome_instructions = context.get("outcome_instructions")
+            if outcome_instructions and active_role.lower() == context.get('role_name', '').lower():
+                click.echo("   💬 Role-specific outcome instructions provided")
+
+        click.secho("   ✅ Preview completed successfully", fg="green")
+
+    except Exception as e:
+        click.secho(f"❌ Error during job preview: {e}", fg="red")
 
 
 @job.command(name="activate")

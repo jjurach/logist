@@ -88,7 +88,8 @@ def execute_llm_with_cline(
     model: str = "grok-code-fast-1",
     timeout: int = 300,
     workspace_dir: str = None,
-    instruction_files: Optional[List[str]] = None
+    instruction_files: Optional[List[str]] = None,
+    file_arguments: Optional[List[str]] = None
 ) -> tuple[Dict[str, Any], float]:
     """
     Executes an LLM call using the CLINE interface.
@@ -146,11 +147,17 @@ def execute_llm_with_cline(
             "cline", "--yolo", "--oneshot",
             "--file", prompt_file
         ]
+
+        # Add file arguments (attachments, discovered files, etc.)
+        if file_arguments:
+            for file_path in file_arguments:
+                cmd.extend(["--file", file_path])
+
         if instruction_files:
             for f_path in instruction_files:
                 cmd.extend(["--file", f_path])
 
-        # Change to workspace directory if specified
+        # Change to workspace directory for execution
         cwd_dir = workspace_dir if workspace_dir else os.getcwd()
 
         # Execute CLINE
@@ -615,3 +622,148 @@ def handle_execution_error(job_dir: str, job_id: str, error: Exception, raw_outp
         # Don't raise - we want to let the caller know about the original error, not manifest update failure
 
     return  # Allow caller to decide whether to continue or raise the original error
+
+
+def save_latest_outcome(job_dir: str, llm_response: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Saves the latest LLM response to latest-outcome.json in the job directory.
+
+    Args:
+        job_dir: Job directory path
+        llm_response: The processed LLM response dictionary
+
+    Returns:
+        Dict with save operation results
+    """
+    result = {
+        "success": False,
+        "outcome_file": os.path.join(job_dir, "latest-outcome.json"),
+        "error": None
+    }
+
+    try:
+        # Extract key fields from LLM response for outcome
+        outcome_data = {
+            "action": llm_response.get("action"),
+            "summary_for_supervisor": llm_response.get("summary_for_supervisor", ""),
+            "evidence_files": llm_response.get("evidence_files", []),
+            "timestamp": llm_response.get("processed_at"),
+            "cline_task_id": llm_response.get("cline_task_id"),
+            "metrics": llm_response.get("metrics", {})
+        }
+
+        # Save to latest-outcome.json
+        with open(result["outcome_file"], 'w') as f:
+            json.dump(outcome_data, f, indent=2)
+
+        result["success"] = True
+
+    except Exception as e:
+        result["error"] = str(e)
+
+    return result
+
+
+def load_previous_outcome(job_dir: str) -> Optional[Dict[str, Any]]:
+    """
+    Loads the previous outcome from latest-outcome.json if it exists.
+
+    Args:
+        job_dir: Job directory path
+
+    Returns:
+        Previous outcome dictionary or None if not found
+    """
+    outcome_file = os.path.join(job_dir, "latest-outcome.json")
+
+    if not os.path.exists(outcome_file):
+        return None
+
+    try:
+        with open(outcome_file, 'r') as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def prepare_outcome_for_attachments(job_dir: str, workspace_dir: str) -> Dict[str, Any]:
+    """
+    Prepares previous outcome data for attachment to next step.
+
+    Copies latest-outcome.json to workspace/attachments/ and returns it as an attachment.
+
+    Args:
+        job_dir: Job directory path
+        workspace_dir: Workspace directory path
+
+    Returns:
+        Dict with outcome preparation results
+    """
+    result = {
+        "success": True,
+        "attachments_added": [],
+        "error": None
+    }
+
+    try:
+        previous_outcome = load_previous_outcome(job_dir)
+        if previous_outcome is None:
+            return result  # No previous outcome, that's fine
+
+        # Copy to workspace attachments
+        outcome_file = os.path.join(job_dir, "latest-outcome.json")
+        workspace_attachments_dir = os.path.join(workspace_dir, "attachments")
+        workspace_outcome_file = os.path.join(workspace_attachments_dir, "latest-outcome.json")
+
+        # Ensure attachments directory exists
+        os.makedirs(workspace_attachments_dir, exist_ok=True)
+
+        # Copy the file
+        shutil.copy2(outcome_file, workspace_outcome_file)
+
+        result["attachments_added"].append(workspace_outcome_file)
+
+    except Exception as e:
+        result["success"] = False
+        result["error"] = str(e)
+
+    return result
+
+
+def enhance_context_with_previous_outcome(context: Dict[str, Any], job_dir: str) -> Dict[str, Any]:
+    """
+    Enhances job context with previous outcome information for role-specific guidance.
+
+    Args:
+        context: Job context dictionary
+        job_dir: Job directory path
+
+    Returns:
+        Enhanced context dictionary
+    """
+    previous_outcome = load_previous_outcome(job_dir)
+    if previous_outcome is None:
+        return context  # No enhancement needed
+
+    # Add previous outcome to context
+    context["previous_outcome"] = previous_outcome
+
+    # Add role-specific instructions based on previous outcome
+    active_role = context.get("role_name", "").lower()
+
+    if active_role == "worker":
+        context["outcome_instructions"] = (
+            "You have access to the previous step's outcome in previous_outcome. "
+            "Use this to understand what was accomplished in the prior step and "
+            "summarize your work accordingly, noting any struggles or additional "
+            "information that helped you succeed."
+        )
+    elif active_role == "supervisor":
+        context["outcome_instructions"] = (
+            "You have access to the previous step's outcome in previous_outcome. "
+            "Review this to understand what the worker accomplished, assess it "
+            "against the overall objectives, and provide guidance regarding any "
+            "concerns, criticisms, additional research needed, or approval to proceed."
+        )
+
+    return context

@@ -29,6 +29,8 @@ If the task cannot be completed or issues are encountered:
 
 ---
 
+Read and interpret ../../../AGENTS.md especially for git expectations.
+
 ## Git Status and Commit Protocol
 After completing the implementation for any Logist prompt:
 
