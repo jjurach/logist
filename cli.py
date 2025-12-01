@@ -96,7 +96,7 @@ class LogistEngine:
         with open(manifest_path, 'w') as f:
             json.dump(manifest, f, indent=2)
 
-    def step_job(self, ctx: click.Context, job_id: str, job_dir: str, dry_run: bool = False) -> bool:
+    def step_job(self, ctx: click.Context, job_id: str, job_dir: str, dry_run: bool = False, model: str = "grok-code-fast-1") -> bool:
         """Execute single phase of job and pause."""
         manager.setup_workspace(job_dir) # Ensure workspace is ready
 
@@ -721,8 +721,11 @@ def run(ctx, job_id: str | None, model: str, resume: bool):
 @click.option(
     "--dry-run", is_flag=True, help="Simulate a full step without making real calls."
 )
+@click.option(
+    "--model", default="grok-code-fast-1", help="Override default model selection for agents"
+)
 @click.pass_context
-def step(ctx, job_id: str | None, dry_run: bool):
+def step(ctx, job_id: str | None, dry_run: bool, model: str):
     """Execute single phase of job and pause."""
     click.echo("👣 Executing 'logist job step'")
     if final_job_id := get_job_id(ctx, job_id):
@@ -730,7 +733,7 @@ def step(ctx, job_id: str | None, dry_run: bool):
         if job_dir is None:
             click.secho("❌ Could not find job directory.", fg="red")
             return
-        engine.step_job(ctx, final_job_id, job_dir, dry_run=dry_run)
+        engine.step_job(ctx, final_job_id, job_dir, dry_run=dry_run, model=model)
     else:
         click.secho("❌ No job ID provided and no current job is selected.", fg="red")
 
