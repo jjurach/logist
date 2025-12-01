@@ -2443,16 +2443,18 @@ def activate_job(ctx, job_id: str | None, rank: int):
             raise click.ClickException(f"❌ State transition failed: expected PENDING, got {new_status}")
 
         # Ensure current_phase is initialized when activating
-        # If current_phase is missing and phases exist, set it to first phase
-        # Otherwise default to "default" for single-phase execution
+        # If phases array is missing or empty, create a default single-phase job
+        phases = manifest.get("phases", [])
+        if not phases:
+            # Create default phase array for jobs without explicit phases
+            phases = [{"name": "default", "description": "Default single phase"}]
+            manifest["phases"] = phases  # Update manifest with default phases
+            click.echo(f"   📍 Initialized job with default single phase")
+
+        # Set current_phase to first phase if not already set
         if manifest.get("current_phase") is None:
-            phases = manifest.get("phases", [])
-            if phases and len(phases) > 0:
-                current_phase = phases[0]["name"]
-                click.echo(f"   📍 Initialized current_phase to first phase: '{current_phase}'")
-            else:
-                current_phase = "default"  # Default for jobs without explicit phases
-                click.echo(f"   📍 Initialized current_phase to default: '{current_phase}'")
+            current_phase = phases[0]["name"]
+            click.echo(f"   📍 Initialized current_phase to: '{current_phase}'")
         else:
             current_phase = manifest["current_phase"]  # Keep existing if already set
 
