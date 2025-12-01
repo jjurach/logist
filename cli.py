@@ -179,6 +179,82 @@ class LogistEngine:
             handle_execution_error(job_dir, job_id, e, raw_output=raw_cline_output)
             return False
 
+    def run_job(self, ctx: click.Context, job_id: str, job_dir: str) -> bool:
+        """
+        Execute a job continuously until completion, intervention, or cancellation.
+
+        This command orchestrates iterative worker and supervisor executions
+        until the job reaches SUCCESS, CANCELED, INTERVENTION_REQUIRED, or APPROVAL_REQUIRED.
+        """
+        manager.setup_workspace(job_dir)  # Ensure workspace is ready
+
+        # Define terminal states where execution stops
+        TERMINAL_STATES = {"SUCCESS", "CANCELED", "INTERVENTION_REQUIRED", "APPROVAL_REQUIRED"}
+
+        click.echo("🎯 [LOGIST] Starting continuous job execution")
+        click.echo(f"   📍 Job: {job_id}")
+        click.echo(f"   📁 Directory: {job_dir}")
+
+        try:
+            # Load initial job manifest to check current status
+            manifest = load_job_manifest(job_dir)
+            current_status = manifest.get("status", "PENDING")
+
+            if current_status in TERMINAL_STATES:
+                click.secho(f"⚠️  Job '{job_id}' is already in terminal state: {current_status}", fg="yellow")
+                click.echo("   💡 Use 'logist job step' to advance manually or 'logist job rerun' to restart")
+                return True  # Not an error, just already complete
+
+            click.echo(f"   🔄 Initial Status: {current_status}")
+            click.echo("   🔄 Beginning execution loop...\n")
+
+            step_count = 0
+            while True:
+                step_count += 1
+                click.echo(f"▼ Step {step_count} ▼")
+
+                # Execute one step
+                success = self.step_job(ctx, job_id, job_dir, dry_run=False)
+
+                if not success:
+                    click.secho(f"❌ Step {step_count} failed - stopping execution", fg="red")
+                    return False
+
+                # Check if we've reached a terminal state
+                try:
+                    manifest = load_job_manifest(job_dir)
+                    current_status = manifest.get("status", "PENDING")
+
+                    if current_status in TERMINAL_STATES:
+                        click.echo(f"\n🎉 [LOGIST] Job execution completed!")
+                        click.secho(f"   📊 Final Status: {current_status}", fg="green")
+                        click.echo(f"   📈 Steps executed: {step_count}")
+
+                        if current_status == "SUCCESS":
+                            click.echo("   ✅ Job completed successfully!")
+                        elif current_status == "CANCELED":
+                            click.echo("   🚫 Job was canceled")
+                        elif current_status == "INTERVENTION_REQUIRED":
+                            click.echo("   👤 Human intervention required")
+                            click.echo("   💡 Use 'logist job step' or manual fixes, then 'logist job run' to continue")
+                        elif current_status == "APPROVAL_REQUIRED":
+                            click.echo("   👍 Final approval required")
+                            click.echo("   💡 Use appropriate commands to approve/reject")
+
+                        return True
+
+                except JobStateError as e:
+                    click.secho(f"❌ Error checking job status after step {step_count}: {e}", fg="red")
+                    return False
+
+                # Small delay between steps for readability
+                import time
+                time.sleep(0.5)
+
+        except (JobProcessorError, JobStateError, JobContextError, Exception) as e:
+            click.secho(f"❌ Error during job run for '{job_id}': {e}", fg="red")
+            return False
+
     def restep_single_step(self, ctx: click.Context, job_id: str, job_dir: str, step_number: int, dry_run: bool = False) -> bool:
         """Re-execute a specific single step (phase) of a job for debugging purposes."""
         manager.setup_workspace(job_dir) # Ensure workspace is ready
@@ -711,7 +787,7 @@ def run(ctx, job_id: str | None, model: str, resume: bool):
         if job_dir is None:
             click.secho("❌ Could not find job directory.", fg="red")
             return
-        click.secho("The 'run' command is temporarily disabled as it's out of scope for this task.", fg="yellow")
+        engine.run_job(ctx, final_job_id, job_dir)
     else:
         click.secho("❌ No job ID provided and no current job is selected.", fg="red")
 

@@ -164,6 +164,40 @@ if [ $? -ne 0 ]; then
 fi
 echo "✅ Job chat correctly rejects jobs with no execution history"
 
+# Unit 10: job_run_command
+echo "📋 Unit 10: logist job run - terminal state detection"
+# Test that run command properly handles jobs in terminal states
+# First create a job and manually set it to a terminal state
+mkdir -p "$DEMO_DIR/terminal-test-job"
+logist job create "$DEMO_DIR/terminal-test-job"
+
+# Manually set job to CANCELED status to test terminal state handling
+JOB_MANIFEST="$DEMO_DIR/terminal-test-job/job_manifest.json"
+python3 -c "
+import json
+with open('$JOB_MANIFEST', 'r') as f:
+    manifest = json.load(f)
+manifest['status'] = 'SUCCESS'
+with open('$JOB_MANIFEST', 'w') as f:
+    json.dump(manifest, f, indent=2)
+"
+
+# Test that run command recognizes terminal state
+logist job run terminal-test-job 2>&1 | grep -q "already in terminal state"
+if [ $? -ne 0 ]; then
+    echo "❌ Job run should detect and skip jobs in terminal states"
+    exit 1
+fi
+echo "✅ Job run correctly recognizes jobs in terminal states"
+
+# Test that run command shows proper error for nonexistent jobs
+NONEXISTENT_RUN_OUTPUT=$(logist job run nonexistent-job 2>&1)
+if ! echo "$NONEXISTENT_RUN_OUTPUT" | grep -q "Could not find job directory"; then
+    echo "❌ Job run should show proper error for nonexistent jobs"
+    exit 1
+fi
+echo "✅ Job run shows proper error handling for nonexistent jobs"
+
 echo ""
 echo "🎉 All implemented units passed!"
 echo "✅ Virtual environment activated"
@@ -175,5 +209,6 @@ echo "✅ Job workspace setup executed"
 echo "✅ Role list command executed and roles verified"
 echo "✅ Job rerun command executed and scenarios verified"
 echo "✅ Job chat command state validation working"
+echo "✅ Job run command terminal state detection working"
 echo ""
 echo "🎉 Demo script completed successfully"
