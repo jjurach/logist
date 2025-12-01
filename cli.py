@@ -827,40 +827,57 @@ def init_command(jobs_dir: str) -> bool:
     try:
         os.makedirs(jobs_dir, exist_ok=True)
 
-        # Find schemas directory using pkg_resources or fallback paths
+        # Find schemas directory using multiple fallbacks (pkg_resources fails)
         schemas_dir = None
-        try:
-            import pkg_resources
-            schemas_dir = pkg_resources.resource_filename('logist', 'schemas/roles')
-        except ImportError:
-            # pkg_resources not available, try fallback paths
-            schemas_dir = None
 
-        if not schemas_dir:
-            # Try development source code location first
+        # Try hardcoded development location first
+        dev_alt_schemas_dir = "/home/phaedrus/AiSpace/logist/schemas/roles"
+        if os.path.exists(dev_alt_schemas_dir):
+            schemas_dir = dev_alt_schemas_dir
+        else:
+            # Fallback to script-relative path for other development setups
             script_dir = os.path.dirname(os.path.abspath(__file__))
             dev_schemas_dir = os.path.join(script_dir, "..", "..", "schemas", "roles")
             if os.path.exists(dev_schemas_dir):
                 schemas_dir = dev_schemas_dir
             else:
-                # Ultimate fallback - hardcoded dev path (temporary for development)
-                fallback_schemas_dir = "/home/phaedrus/AiSpace/logist/schemas/roles"
-                if os.path.exists(fallback_schemas_dir):
-                    schemas_dir = fallback_schemas_dir
+                # Try pkg_resources (may give wrong path)
+                try:
+                    import pkg_resources
+                    schemas_dir = pkg_resources.resource_filename('logist', 'schemas/roles')
+                except ImportError:
+                    schemas_dir = None
                 else:
-                    # Last resort - look in current directory relative to script
-                    final_fallback = os.path.join(script_dir, "..", "..", "..", "schemas", "roles")
-                    if os.path.exists(final_fallback):
-                        schemas_dir = final_fallback
+                    # Last resort if pkg_resources finds something wrong - use the correct path anyway
+                    if schemas_dir and not os.path.exists(os.path.join(schemas_dir, "worker.json")):
+                        # Override pkg_resources with correct development path
+                        schemas_dir = "/home/phaedrus/AiSpace/logist/schemas/roles"
 
         roles_to_copy = ["worker.json", "supervisor.json"]
+        schema_copied_count = 0
+
         for role_file in roles_to_copy:
             schema_path = os.path.join(schemas_dir, role_file) if schemas_dir else None
             dest_path = os.path.join(jobs_dir, role_file)
+
             if schemas_dir and os.path.exists(schema_path):
-                shutil.copy2(schema_path, dest_path)
+                try:
+                    shutil.copy2(schema_path, dest_path)
+                    schema_copied_count += 1
+                except (OSError, IOError) as e:
+                    click.secho(f"⚠️  Warning: Failed to copy '{role_file}': {e}", fg="yellow")
             else:
                 click.secho(f"⚠️  Warning: Schema file '{role_file}' not found at '{schemas_dir or 'unknown path'}'", fg="yellow")
+
+        # Update success message only if files were actually copied
+        if schema_copied_count > 0:
+            message_lines = [
+                f"   📎 Copied {schema_copied_count} schema file(s)"
+            ]
+        else:
+            message_lines = [
+                f"   ⚠️  No schema files could be copied"
+            ]
 
         jobs_index_path = os.path.join(jobs_dir, "jobs_index.json")
         jobs_index_data = {
