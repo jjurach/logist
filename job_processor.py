@@ -165,11 +165,37 @@ def execute_llm_with_cline(
 
         execution_time = time.time() - start_time
 
+        # Enhanced error handling with classification
         if process.returncode != 0:
-            full_output = process.stdout + process.stderr
-            raise JobProcessorError(
-                f"CLINE execution failed with code {process.returncode}:\n{full_output}"
+            # Import error classification here to avoid circular imports
+            from logist.error_classification import classify_error
+
+            # Classify the subprocess error
+            error_classification = classify_error(
+                JobProcessorError(f"CLINE execution failed with code {process.returncode}"),
+                {
+                    "error_type": "subprocess",
+                    "returncode": process.returncode,
+                    "stderr": process.stderr,
+                    "stdout": process.stdout,
+                    "operation": "LLM execution with CLINE"
+                }
             )
+
+            # Create enhanced error message
+            full_output = process.stdout + process.stderr
+            enhanced_error_msg = (
+                f"CLINE execution failed (Error ID: {error_classification.correlation_id}):\n"
+                f"  Classification: {error_classification.category.value} - {error_classification.severity.value}\n"
+                f"  User Message: {error_classification.user_message}\n"
+                f"  Suggested Action: {error_classification.suggested_action}\n"
+                f"  Details: {full_output}"
+            )
+
+            # Add classification to the exception for upstream handling
+            error = JobProcessorError(enhanced_error_msg)
+            error.classification = error_classification
+            raise error
 
         full_cline_output = process.stdout + process.stderr
 
@@ -460,8 +486,10 @@ def process_simulated_response(
 
 def handle_execution_error(job_dir: str, job_id: str, error: Exception, raw_output: str = None) -> None:
     """
-    Handles an execution error, updates job manifest to INTERVENTION_REQUIRED,
-    and logs the error.
+    Handles an execution error with sophisticated classification and recovery logic.
+
+    Uses error classification system to determine appropriate job status changes,
+    user messaging, and recovery strategies.
 
     Args:
         job_dir: The absolute path to the job's directory.
@@ -469,27 +497,121 @@ def handle_execution_error(job_dir: str, job_id: str, error: Exception, raw_outp
         error: The exception object that occurred.
         raw_output: Optional raw output from the failing process for debugging.
     """
-    from logist.job_state import update_job_manifest
+    from logist.job_state import update_job_manifest, transition_state_on_error, load_job_manifest
+    from logist.error_classification import classify_error, should_retry_error, get_retry_delay
     from datetime import datetime
+    import time
     import click # For logging to console
 
-    error_message = str(error)
-    click.secho(f"❌ Error during job '{job_id}' execution: {error_message}", fg="red")
+    # Load current job state for context
+    try:
+        manifest = load_job_manifest(job_dir)
+        current_status = manifest.get("status", "UNKNOWN")
+    except Exception:
+        current_status = "UNKNOWN"
 
-    history_entry = {
-        "event": "ERROR",
-        "description": f"Execution failed: {error_message}",
-        "details": f"Error Type: {type(error).__name__}",
-        "raw_output": raw_output if raw_output else "No raw output available."
+    # Classify the error using the new system
+    error_context = {
+        "error_type": "subprocess" if hasattr(error, 'classification') and error.classification else "unknown",
+        "operation": f"Job '{job_id}' execution",
+        "returncode": getattr(error, 'returncode', None),
+        "stderr": getattr(error, 'stderr', ''),
+        "stdout": getattr(error, 'stdout', ''),
     }
 
+    # If error already has classification from subprocess handling, use it
+    if hasattr(error, 'classification'):
+        classification = error.classification
+    else:
+        # Classify based on exception and context
+        try:
+            classification = classify_error(error, error_context)
+        except Exception as classification_error:
+            # Fallback classification if classifier fails
+            from logist.error_classification import ErrorClassification, ErrorSeverity, ErrorCategory
+            import uuid
+            classification = ErrorClassification(
+                severity=ErrorSeverity.RECOVERABLE,
+                category=ErrorCategory.EXECUTION,
+                description="Error classification failed - using fallback",
+                user_message="An execution error occurred.",
+                can_retry=True,
+                max_retries=1,
+                intervention_required=True,
+                suggested_action="Review error details and retry",
+                correlation_id=f"error_fallback_{uuid.uuid4().hex[:8]}"
+            )
+
+    # Determine new job status based on classification
+    new_status = transition_state_on_error(current_status, classification)
+
+    # Enhanced error messaging
+    error_message = str(error) if not hasattr(error, 'classification') else error.args[0] if error.args else str(error)
+    click.secho(f"❌ Error during job '{job_id}' execution (ID: {classification.correlation_id})", fg="red")
+    click.echo(f"   📊 Classification: {classification.category.value} - {classification.severity.value}")
+    click.echo(f"   💬 {classification.user_message}")
+    click.echo(f"   💡 {classification.suggested_action}")
+
+    if raw_output and raw_output != error_message:
+        click.echo(f"   📄 Raw output: {raw_output[:200]}{'...' if len(raw_output) > 200 else ''}")
+
+    # Create comprehensive history entry
+    history_entry = {
+        "event": "EXECUTION_ERROR",
+        "error_classification": classification.to_dict(),
+        "description": f"Execution failed: {classification.description}",
+        "error_message": error_message,
+        "details": f"Error Type: {type(error).__name__}",
+        "raw_output": raw_output if raw_output else "No raw output available.",
+        "can_retry": classification.can_retry,
+        "max_retries": classification.max_retries,
+        "intervention_required": classification.intervention_required
+    }
+
+    # Implement retry logic for transient errors
+    retry_attempted = False
+    if classification.severity.value == "transient" and classification.can_retry:
+        # This would be handled by the caller for actual retries
+        # For now, just record that retry is possible
+        history_entry["retry_recommended"] = True
+        history_entry["retry_delay_seconds"] = get_retry_delay(classification, 0)
+
     try:
-        updated_manifest = update_job_manifest(
-            job_dir=job_dir,
-            new_status="INTERVENTION_REQUIRED",
-            history_entry=history_entry
-        )
-        click.secho(f"⚠️ Job '{job_id}' status updated to INTERVENTION_REQUIRED.", fg="yellow")
-    except Exception as e:
-        click.secho(f"Critical error: Failed to update manifest for job '{job_id}' after an execution error: {e}", fg="red")
+        # Update job manifest with appropriate status
+        if new_status:
+            updated_manifest = update_job_manifest(
+                job_dir=job_dir,
+                new_status=new_status,
+                history_entry=history_entry
+            )
+            click.secho(f"⚠️ Job '{job_id}' status updated to {new_status}.", fg="yellow")
+        else:
+            # No status change - just record the error in history
+            updated_manifest = update_job_manifest(
+                job_dir=job_dir,
+                history_entry=history_entry
+            )
+            click.echo(f"📝 Error recorded in job history (status unchanged).")
+
+        # Provide next steps based on classification
+        if classification.severity.value == "fatal":
+            click.secho(f"🚫 Fatal error - job '{job_id}' has been canceled.", fg="red")
+            click.echo("   💡 Create a new job or contact support for fatal errors.")
+
+        elif classification.severity.value == "recoverable":
+            click.echo("   🔄 Recovery options:")
+            click.echo("   • Fix the issue described above")
+            click.echo("   • Run 'logist job step' to retry")
+            click.echo("   • Use 'logist job rerun' for fresh start (clears history)")
+
+        elif classification.severity.value == "transient":
+            click.echo("   🔄 This appears to be a temporary issue.")
+            click.echo("   • Wait a moment and run 'logist job step' to retry")
+            click.echo("   • Check network/API status if issues persist")
+
+    except Exception as manifest_error:
+        click.secho(f"Critical error: Failed to update manifest for job '{job_id}' after an execution error: {manifest_error}", fg="red")
         click.secho(f"Original error for job '{job_id}': {error_message}", fg="red")
+        # Don't raise - we want to let the caller know about the original error, not manifest update failure
+
+    return  # Allow caller to decide whether to continue or raise the original error

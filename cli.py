@@ -18,6 +18,7 @@ from logist.job_state import JobStateError, load_job_manifest, get_current_state
 from logist.job_processor import execute_llm_with_cline, handle_execution_error, validate_evidence_files, JobProcessorError
 from logist.job_context import assemble_job_context, JobContextError # Now exists
 from logist.recovery import validate_state_persistence, get_recovery_status, RecoveryError
+from logist.metrics_utils import check_thresholds_before_execution, calculate_detailed_metrics, generate_cost_projections, export_metrics_to_csv, ThresholdExceededError
 
 
 class LogistEngine:
@@ -127,6 +128,13 @@ class LogistEngine:
             manifest = load_job_manifest(job_dir)
             current_status = manifest.get("status", "PENDING")
 
+            # 2. Check threshold limits before execution
+            try:
+                check_thresholds_before_execution(manifest)
+            except ThresholdExceededError as e:
+                click.secho(f"❌ {e}", fg="red")
+                return False
+
             # 2. Determine current phase and active role
             current_phase_name, active_role = get_current_state_and_role(manifest)
             click.echo(f"   → Current Phase: {current_phase_name}, Active Role: {active_role}")
@@ -184,6 +192,27 @@ class LogistEngine:
                 history_entry=history_entry
             )
             click.secho(f"   🔄 Job status updated to: {new_status}", fg="blue")
+
+            # Perform git commit for evidence files and changes
+            try:
+                commit_summary = processed_response.get("summary_for_supervisor", f"{active_role} step: {current_phase_name}")
+                commit_result = workspace_utils.perform_git_commit(
+                    job_dir=job_dir,
+                    evidence_files=evidence_files,
+                    summary=commit_summary
+                )
+
+                if commit_result["success"]:
+                    click.secho(f"   💾 Changes committed: {commit_result['commit_hash'][:8]}", fg="green")
+                    click.echo(f"   📁 Files committed: {len(commit_result['files_committed'])}")
+                else:
+                    click.secho(f"   ⚠️  Git commit failed: {commit_result['error']}", fg="yellow")
+                    # Don't fail the step for git commit issues - continue execution
+
+            except Exception as e:
+                click.secho(f"   ⚠️  Git commit error: {e}", fg="yellow")
+                # Continue - git commit failures shouldn't fail the job step
+
             return True
 
         except (JobProcessorError, JobStateError, JobContextError, Exception) as e:
@@ -684,33 +713,34 @@ class JobManager:
         print(f"🛑 [LOGIST] Terminating job '{job_id}' workflow")
 
     def setup_workspace(self, job_dir: str) -> None:
-        """Setup isolated workspace by cloning local Git repository."""
-        workspace_dir = os.path.join(job_dir, "workspace")
-        workspace_git = os.path.join(workspace_dir, ".git")
-
-        git_root = workspace_utils.find_git_root() # Use the function from the new module
-        if git_root is None:
-            raise click.ClickException("Not in a Git repository. Cannot setup workspace.")
-
-        if os.path.exists(workspace_git):
-            # Assume valid workspace exists
-            return
-
-        if os.path.exists(workspace_dir):
-            shutil.rmtree(workspace_dir)
-
-        os.makedirs(job_dir, exist_ok=True)
+        """Setup isolated workspace with branch management for advanced isolation."""
+        # Extract job_id from directory path
+        job_id = os.path.basename(os.path.abspath(job_dir))
 
         try:
-            subprocess.run(
-                ["git", "clone", git_root, "workspace"],
-                cwd=job_dir,
-                check=True,
-                capture_output=True,
-                text=True
-            )
-        except subprocess.CalledProcessError as e:
-            raise click.ClickException(f"Failed to clone workspace: {e.stderr}")
+            # Use advanced isolated workspace setup
+            result = workspace_utils.setup_isolated_workspace(job_id, job_dir, base_branch="main")
+            if not result["success"]:
+                raise click.ClickException(f"Failed to setup isolated workspace: {result['error']}")
+
+            # Store branch information in job manifest for tracking
+            manifest_path = os.path.join(job_dir, "job_manifest.json")
+            if os.path.exists(manifest_path):
+                try:
+                    import json
+                    with open(manifest_path, 'r') as f:
+                        manifest = json.load(f)
+
+                    manifest["workspace_branch"] = result["branch_name"]
+
+                    with open(manifest_path, 'w') as f:
+                        json.dump(manifest, f, indent=2)
+                except (json.JSONDecodeError, OSError):
+                    # Manifest operations are best-effort; don't fail if they don't work
+                    pass
+
+        except Exception as e:
+            raise click.ClickException(f"Advanced workspace setup failed: {e}")
 
 
 class RoleManager:
@@ -843,6 +873,11 @@ def main(ctx, jobs_dir):
 @main.group()
 def job():
     """Manage job workflows and their execution state."""
+
+
+@main.group()
+def workspace():
+    """Manage job workspaces and their lifecycle."""
 
 
 @main.group()
@@ -1044,10 +1079,48 @@ def status(ctx, job_id: str | None, output_json: bool, recovery: bool):
                 click.echo(f"   📍 Description: {status_data.get('description', 'No description')}")
                 click.echo(f"   🔄 Status: {status_data.get('status', 'UNKNOWN')}")
                 click.echo(f"📊 Phase: {status_data.get('current_phase', 'none')}")
-                metrics = status_data.get('metrics', {})
-                if metrics:
-                    click.echo(f"   💰 Cost: ${metrics.get('cumulative_cost', 0):.4f}")
-                    click.echo(f"   ⏱️  Time: {metrics.get('cumulative_time_seconds', 0):.2f} seconds")
+
+                # Calculate and display enhanced metrics
+                try:
+                    metrics_snapshot = calculate_detailed_metrics(status_data)
+
+                    # Cost information with threshold status
+                    if metrics_snapshot.cost_threshold > 0:
+                        cost_percentage = metrics_snapshot.cost_percentage
+                        cost_status_icon = "🟢" if metrics_snapshot.status_color == "green" else "🟡" if metrics_snapshot.status_color == "yellow" else "🔴"
+                        click.echo(f"   💰 Cost: ${metrics_snapshot.cumulative_cost:.4f} ({cost_percentage:.1f}% of ${metrics_snapshot.cost_threshold:.0f}) {cost_status_icon}")
+                        if metrics_snapshot.cost_remaining > 0:
+                            click.echo(f"      Remaining budget: ${metrics_snapshot.cost_remaining:.4f}")
+                        else:
+                            click.echo(f"      Over budget by: ${abs(metrics_snapshot.cost_remaining):.4f}")
+
+                    # Time information with threshold status
+                    if metrics_snapshot.time_threshold_minutes > 0:
+                        time_percentage = metrics_snapshot.time_percentage
+                        time_status_icon = "🟢" if metrics_snapshot.status_color == "green" else "🟡" if metrics_snapshot.status_color == "yellow" else "🔴"
+                        total_minutes = metrics_snapshot.cumulative_time_seconds / 60
+                        click.echo(f"   ⏱️  Time: {total_minutes:.1f} min ({time_percentage:.1f}% of {metrics_snapshot.time_threshold_minutes:.0f} min) {time_status_icon}")
+                        if metrics_snapshot.time_remaining_minutes > 0:
+                            click.echo(f"      Remaining time: {metrics_snapshot.time_remaining_minutes:.1f} minutes")
+                        else:
+                            click.echo(f"      Over time by: {abs(metrics_snapshot.time_remaining_minutes):.1f} minutes")
+
+                    # Token usage summary if available
+                    if metrics_snapshot.total_tokens > 0:
+                        click.echo(f"   🧠 Tokens: {metrics_snapshot.total_tokens:,} total")
+
+                    # Steps summary
+                    click.echo(f"   📈 Steps: {metrics_snapshot.step_count}")
+
+                except Exception as e:
+                    # Fall back to basic metrics display if enhanced calculation fails
+                    click.secho(f"⚠️  Enhanced metrics calculation failed: {e}", fg="yellow")
+                    metrics = status_data.get('metrics', {})
+                    if metrics:
+                        click.echo(f"   💰 Cost: ${metrics.get('cumulative_cost', 0):.4f}")
+                        click.echo(f"   ⏱️  Time: {metrics.get('cumulative_time_seconds', 0):.2f} seconds")
+
+                # Show history (unchanged)
                 history = status_data.get('history', [])
                 if history:
                     click.echo("   📚 Recent History:")
@@ -1057,6 +1130,124 @@ def status(ctx, job_id: str | None, output_json: bool, recovery: bool):
                     click.echo("   📚 History: No events recorded yet")
         except click.ClickException as e:
             click.secho(f"❌ {e}", fg="red")
+    else:
+        click.secho("❌ No job ID provided and no current job is selected.", fg="red")
+
+
+@job.command()
+@click.argument("job_id", required=False)
+@click.option(
+    "--csv",
+    "export_csv",
+    type=click.Path(),
+    help="Export detailed metrics to CSV file at specified path."
+)
+@click.option(
+    "--projections",
+    is_flag=True,
+    help="Show cost and time projections for job completion."
+)
+@click.option(
+    "--remaining-phases",
+    type=int,
+    default=5,
+    help="Number of remaining phases to use for projections (default: 5)."
+)
+@click.pass_context
+def metrics(ctx, job_id: str | None, export_csv: str, projections: bool, remaining_phases: int):
+    """Display detailed metrics, cost tracking, and budget analysis for a job."""
+    jobs_dir = ctx.obj["JOBS_DIR"]
+    click.echo("📊 Executing 'logist job metrics'")
+
+    if final_job_id := get_job_id(ctx, job_id):
+        try:
+            status_data = manager.get_job_status(final_job_id, jobs_dir)
+
+            click.echo(f"\n📈 Detailed Metrics for Job '{final_job_id}'")
+            click.echo("=" * 60)
+
+            # Calculate detailed metrics
+            metrics_snapshot = calculate_detailed_metrics(status_data)
+            history = status_data.get("history", [])
+
+            # Overall metrics summary
+            click.echo("📊 OVERALL METRICS:")
+            click.echo(f"   💰 Total Cost: ${metrics_snapshot.cumulative_cost:.4f}")
+            click.echo(f"   ⏱️  Total Time: {metrics_snapshot.cumulative_time_seconds:.1f} seconds ({metrics_snapshot.cumulative_time_seconds/60:.1f} minutes)")
+
+            if metrics_snapshot.cost_threshold > 0:
+                cost_status_icon = "🟢" if metrics_snapshot.status_color == "green" else "🟡" if metrics_snapshot.status_color == "yellow" else "🔴"
+                click.echo(f"   📈 Cost Budget: ${metrics_snapshot.cost_threshold:.0f} ({metrics_snapshot.cost_percentage:.1f}% used) {cost_status_icon}")
+                click.echo(f"   💵 Remaining Budget: ${metrics_snapshot.cost_remaining:.4f}")
+
+            if metrics_snapshot.time_threshold_minutes > 0:
+                time_status_icon = "🟢" if metrics_snapshot.status_color == "green" else "🟡" if metrics_snapshot.status_color == "yellow" else "🔴"
+                click.echo(f"   ⏳ Time Budget: {metrics_snapshot.time_threshold_minutes:.0f} min ({metrics_snapshot.time_percentage:.1f}% used) {time_status_icon}")
+                click.echo(f"   🕐 Remaining Time: {metrics_snapshot.time_remaining_minutes:.1f} minutes")
+
+            if metrics_snapshot.total_tokens > 0:
+                click.echo(f"   🧠 Total Tokens: {metrics_snapshot.total_tokens:,}")
+
+            click.echo(f"   📈 Steps Executed: {metrics_snapshot.step_count}")
+
+            # Per-step breakdown
+            click.echo("\n📋 PER-STEP BREAKDOWN:")
+            if history:
+                click.echo("   Step | Role      | Action    | Cost     | Time (s) | Tokens")
+                click.echo("   ---- | --------- | --------- | -------- | -------- | ------")
+
+                for i, entry in enumerate(history):
+                    role = entry.get("role", "Unknown")[:9]
+                    action = entry.get("action", "Unknown")[:9]
+                    metrics_entry = entry.get("metrics", {})
+                    cost = metrics_entry.get("cost_usd", 0.0)
+                    time_seconds = metrics_entry.get("duration_seconds", 0.0)
+                    tokens = metrics_entry.get("token_input", 0) + metrics_entry.get("token_output", 0)
+
+                    click.echo(f"   {i:4d} | {role:<9} | {action:<9} | ${cost:>7.4f} | {time_seconds:>8.1f} | {tokens:>6,d}")
+            else:
+                click.echo("   No execution history available.")
+
+            # Projections if requested
+            if projections:
+                click.echo(f"\n🔮 PROJECTIONS (based on {remaining_phases} remaining phases):")
+
+                try:
+                    projection_data = generate_cost_projections(status_data, remaining_phases)
+
+                    click.echo("   Cost Analysis:")
+                    click.echo(f"   • Current Cost: ${projection_data['current_cost']:.4f}")
+                    click.echo(f"   • Average Cost/Step: ${projection_data['average_cost_per_step']:.4f}")
+                    click.echo(f"   • Projected Additional: ${projection_data['projected_cost_remaining']:.4f}")
+                    click.echo(f"   • Projected Total: ${projection_data['projected_total_cost']:.4f}")
+                    click.echo(f"   • Budget Status: {projection_data['cost_status']}")
+
+                    click.echo("   Time Analysis:")
+                    click.echo(f"   • Current Time: {projection_data['current_time_minutes']:.1f} minutes")
+                    click.echo(f"   • Average Time/Step: {projection_data['average_time_per_step_minutes']:.1f} minutes")
+                    click.echo(f"   • Projected Additional: {projection_data['projected_time_remaining_minutes']:.1f} minutes")
+                    click.echo(f"   • Projected Total: {projection_data['projected_total_time_minutes']:.1f} minutes")
+                    click.echo(f"   • Time Status: {projection_data['time_status']}")
+
+                    click.echo("   Recommendations:")
+                    for rec in projection_data['recommendations']:
+                        click.echo(f"   • {rec}")
+
+                    click.echo(f"   Confidence: {projection_data['confidence_level']}")
+
+                except Exception as e:
+                    click.secho(f"   ⚠️  Projection calculation failed: {e}", fg="yellow")
+
+            # CSV export if requested
+            if export_csv:
+                try:
+                    csv_path = export_metrics_to_csv(get_job_dir(ctx, final_job_id), export_csv)
+                    click.secho(f"   📄 Metrics exported to CSV: {csv_path}", fg="green")
+                except Exception as e:
+                    click.secho(f"   ❌ CSV export failed: {e}", fg="red")
+
+        except Exception as e:
+            click.secho(f"❌ Error retrieving metrics: {e}", fg="red")
     else:
         click.secho("❌ No job ID provided and no current job is selected.", fg="red")
 
@@ -1262,6 +1453,567 @@ def list_jobs(ctx):
         else:
             status_display = status
         click.echo(f"{job['job_id']:<20} {status_display:<12} {job['description']}{marker}")
+
+
+@job.command(name="git-status")
+@click.argument("job_id", required=False)
+@click.pass_context
+def git_status(ctx, job_id: str | None):
+    """Show detailed git status for a job's workspace."""
+    click.echo("📊 Executing 'logist job git-status'")
+
+    # Get job ID
+    final_job_id = get_job_id(ctx, job_id)
+    if not final_job_id:
+        click.secho("❌ No job ID provided and no current job is selected.", fg="red")
+        return
+
+    # Get job directory
+    job_dir = get_job_dir(ctx, final_job_id)
+    if not job_dir:
+        click.secho(f"❌ Job '{final_job_id}' not found.", fg="red")
+        return
+
+    # Use workspace_utils to get git status
+    try:
+        git_status_info = workspace_utils.get_workspace_git_status(job_dir)
+        file_summary = workspace_utils.get_workspace_files_summary(job_dir)
+
+        click.echo(f"\n🔍 Git Status for Job '{final_job_id}'")
+        click.echo("=" * 60)
+        click.echo(f"   📁 Workspace: {os.path.join(job_dir, 'workspace')}")
+
+        if git_status_info["is_git_repo"]:
+            click.echo(f"   🌿 Current Branch: {git_status_info['current_branch']}")
+            click.echo(f"   📝 Staged Changes: {len(git_status_info['staged_changes'])} files")
+            click.echo(f"   ✏️  Unstaged Changes: {len(git_status_info['unstaged_changes'])} files")
+            click.echo(f"   ❓ Untracked Files: {len(git_status_info['untracked_files'])} files")
+
+            if git_status_info["staged_changes"]:
+                click.echo("   📝 Staged Files:")
+                for file in git_status_info["staged_changes"][:10]:  # Limit display
+                    click.echo(f"      • {file}")
+                if len(git_status_info["staged_changes"]) > 10:
+                    click.echo(f"      ... and {len(git_status_info['staged_changes']) - 10} more")
+
+            if git_status_info["unstaged_changes"]:
+                click.echo("   ✏️  Unstaged Files:")
+                for file in git_status_info["unstaged_changes"][:10]:
+                    click.echo(f"      • {file}")
+                if len(git_status_info["unstaged_changes"]) > 10:
+                    click.echo(f"      ... and {len(git_status_info['unstaged_changes']) - 10} more")
+
+            if git_status_info["untracked_files"]:
+                click.echo("   ❓ Untracked Files:")
+                for file in git_status_info["untracked_files"][:10]:
+                    click.echo(f"      • {file}")
+                if len(git_status_info["untracked_files"]) > 10:
+                    click.echo(f"      ... and {len(git_status_info["untracked_files"]) - 10} more")
+
+            if git_status_info["recent_commits"]:
+                click.echo("   📚 Recent Commits:")
+                for commit in git_status_info["recent_commits"][:5]:
+                    click.echo(f"      • {commit}")
+        else:
+            click.echo("   ⚠️  Not a git repository")
+
+        # Show file summary
+        if file_summary["tree"]:
+            click.echo(f"   📂 Total Files: {len(file_summary['tree'])}")
+            click.echo("   📋 File Types:")
+            extensions = {}
+            for file_path in file_summary["tree"]:
+                if not file_path.endswith("/"):  # Skip directories
+                    _, ext = os.path.splitext(file_path)
+                    extensions[ext] = extensions.get(ext, 0) + 1
+
+            for ext, count in sorted(extensions.items(), key=lambda x: x[1], reverse=True)[:10]:
+                ext_display = ext if ext else "(no extension)"
+                click.echo(f"      • {ext_display}: {count} files")
+
+        click.secho("   ✅ Git status retrieved successfully", fg="green")
+
+    except Exception as e:
+        click.secho(f"❌ Error getting git status: {e}", fg="red")
+
+
+@job.command(name="git-log")
+@click.argument("job_id", required=False)
+@click.option(
+    "--limit",
+    type=int,
+    default=10,
+    help="Maximum number of commits to show (default: 10)."
+)
+@click.option(
+    "--oneline",
+    is_flag=True,
+    help="Show compact one-line format."
+)
+@click.pass_context
+def git_log(ctx, job_id: str | None, limit: int, oneline: bool):
+    """Show commit history for a job's workspace."""
+    click.echo("📚 Executing 'logist job git-log'")
+
+    # Get job ID
+    final_job_id = get_job_id(ctx, job_id)
+    if not final_job_id:
+        click.secho("❌ No job ID provided and no current job is selected.", fg="red")
+        return
+
+    # Get job directory
+    job_dir = get_job_dir(ctx, final_job_id)
+    if not job_dir:
+        click.secho(f"❌ Job '{final_job_id}' not found.", fg="red")
+        return
+
+    # Get git log using workspace_utils
+    try:
+        workspace_dir = os.path.join(job_dir, "workspace")
+
+        if not workspace_utils.verify_workspace_exists(job_dir):
+            click.secho(f"❌ Workspace not initialized for job '{final_job_id}'.", fg="red")
+            return
+
+        import subprocess
+
+        # Prepare git log command
+        if oneline:
+            cmd = ["git", "log", "--oneline", f"-{limit}"]
+        else:
+            cmd = ["git", "log", f"-{limit}", "--pretty=format:%h - %an, %ar : %s"]
+
+        result = subprocess.run(
+            cmd,
+            cwd=workspace_dir,
+            capture_output=True,
+            text=True,
+            check=True
+        )
+
+        commits = result.stdout.strip().split('\n') if result.stdout.strip() else []
+
+        click.echo(f"\n📚 Commit History for Job '{final_job_id}'")
+        click.echo("=" * 60)
+
+        if commits:
+            click.echo(f"   Showing last {min(limit, len(commits))} commits:")
+            click.echo("")
+            for i, commit in enumerate(commits, 1):
+                click.echo(f"   {i:2d}. {commit}")
+        else:
+            click.echo("   📭 No commits found in this workspace")
+
+        click.secho("   ✅ Git log retrieved successfully", fg="green")
+
+    except subprocess.CalledProcessError as e:
+        click.secho(f"❌ Git command failed: {e.stderr}", fg="red")
+    except Exception as e:
+        click.secho(f"❌ Error getting git log: {e}", fg="red")
+
+
+@job.command(name="commit")
+@click.argument("job_id", required=False)
+@click.option(
+    "--message",
+    "-m",
+    help="Commit message. If not provided, will use a default message."
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Show what would be committed without making the commit."
+)
+@click.pass_context
+def manual_commit(ctx, job_id: str | None, message: str, dry_run: bool):
+    """Manually commit changes in a job's workspace."""
+    click.echo("💾 Executing 'logist job commit'")
+
+    # Get job ID
+    final_job_id = get_job_id(ctx, job_id)
+    if not final_job_id:
+        click.secho("❌ No job ID provided and no current job is selected.", fg="red")
+        return
+
+    # Get job directory
+    job_dir = get_job_dir(ctx, final_job_id)
+    if not job_dir:
+        click.secho(f"❌ Job '{final_job_id}' not found.", fg="red")
+        return
+
+    # Prepare commit message
+    if not message:
+        message = f"Manual commit for job '{final_job_id}'"
+
+    try:
+        # Get current status to check for changes
+        git_status = workspace_utils.get_workspace_git_status(job_dir)
+
+        if not git_status["is_git_repo"]:
+            click.secho(f"❌ Workspace not initialized for job '{final_job_id}'.", fg="red")
+            return
+
+        total_changes = len(git_status["staged_changes"]) + len(git_status["unstaged_changes"]) + len(git_status["untracked_files"])
+
+        if total_changes == 0:
+            click.secho("ℹ️  No changes to commit.", fg="yellow")
+            return
+
+        click.echo("   📝 Changes to commit:")
+        if git_status["staged_changes"]:
+            click.echo(f"      Staged: {len(git_status['staged_changes'])} files")
+        if git_status["unstaged_changes"]:
+            click.echo(f"      Unstaged: {len(git_status['unstaged_changes'])} files")
+        if git_status["untracked_files"]:
+            click.echo(f"      Untracked: {len(git_status['untracked_files'])} files")
+
+        if dry_run:
+            click.echo(f"   📋 Would commit with message: '{message}'")
+            click.secho("   ✅ Dry run completed", fg="blue")
+            return
+
+        # Perform the commit
+        commit_result = workspace_utils.perform_git_commit(
+            job_dir=job_dir,
+            evidence_files=[],  # No specific evidence files for manual commits
+            summary=message
+        )
+
+        if commit_result["success"]:
+            click.secho(f"   ✅ Successfully committed: {commit_result['commit_hash'][:8]}", fg="green")
+            click.echo(f"   📂 Files committed: {len(commit_result['files_committed'])}")
+            click.echo(f"   💬 Message: {message}")
+        else:
+            click.secho(f"   ❌ Commit failed: {commit_result['error']}", fg="red")
+
+    except Exception as e:
+        click.secho(f"❌ Error during commit: {e}", fg="red")
+
+
+@job.command(name="merge-preview")
+@click.argument("job_id", required=False)
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(),
+    help="Output path for patch file. Defaults to job directory."
+)
+@click.option(
+    "--format",
+    type=click.Choice(["patch", "diff"]),
+    default="patch",
+    help="Output format: patch (default) or diff."
+)
+@click.option(
+    "--since",
+    help="Start point for diff (commit hash, branch, etc.). Defaults to branch creation."
+)
+@click.pass_context
+def merge_preview(ctx, job_id: str | None, output: str, format: str, since: str):
+    """Generate patch files from job branch for manual merge preparation."""
+    click.echo("📋 Executing 'logist job merge-preview'")
+
+    # Get job ID
+    final_job_id = get_job_id(ctx, job_id)
+    if not final_job_id:
+        click.secho("❌ No job ID provided and no current job is selected.", fg="red")
+        return
+
+    # Get job directory
+    job_dir = get_job_dir(ctx, final_job_id)
+    if not job_dir:
+        click.secho(f"❌ Job '{final_job_id}' not found.", fg="red")
+        return
+
+    try:
+        workspace_dir = os.path.join(job_dir, "workspace")
+
+        if not workspace_utils.verify_workspace_exists(job_dir):
+            click.secho(f"❌ Workspace not initialized for job '{final_job_id}'.", fg="red")
+            return
+
+        # Get current branch info
+        import subprocess
+
+        # Get current branch name
+        branch_result = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=workspace_dir,
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        current_branch = branch_result.stdout.strip()
+
+        # Load manifest to get base branch
+        manifest_path = os.path.join(job_dir, "job_manifest.json")
+        base_branch = "main"  # Default
+        if os.path.exists(manifest_path):
+            try:
+                with open(manifest_path, 'r') as f:
+                    manifest = json.load(f)
+                    # Try to determine base branch from workspace setup
+                    if "workspace_branch" in manifest:
+                        # The branch name contains job ID, so base is typically 'main'
+                        base_branch = "main"
+            except (json.JSONDecodeError, OSError):
+                pass
+
+        click.echo(f"\n📋 Merge Preview for Job '{final_job_id}'")
+        click.echo("=" * 60)
+        click.echo(f"   🌿 Job Branch: {current_branch}")
+        click.echo(f"   🎯 Target Branch: {base_branch}")
+        click.echo(f"   📁 Workspace: {workspace_dir}")
+
+        # Determine start point for comparison
+        start_point = since or base_branch
+
+        # Check if there are differences
+        diff_result = subprocess.run(
+            ["git", "diff", "--name-only", start_point],
+            cwd=workspace_dir,
+            capture_output=True,
+            text=True,
+            check=True
+        )
+
+        changed_files = diff_result.stdout.strip().split('\n') if diff_result.stdout.strip() else []
+
+        if not changed_files:
+            click.secho("ℹ️  No changes to merge. Job branch is identical to base.", fg="yellow")
+            return
+
+        click.echo(f"   📝 Files changed: {len(changed_files)}")
+        click.echo("   📄 Changed files:")
+        for i, file in enumerate(changed_files[:10], 1):
+            click.echo(f"      {i:2d}. {file}")
+        if len(changed_files) > 10:
+            click.echo(f"      ... and {len(changed_files) - 10} more")
+
+        # Generate patch file
+        if output:
+            patch_path = output
+        else:
+            timestamp = subprocess.run(
+                ["date", "+%Y%m%d_%H%M%S"],
+                capture_output=True,
+                text=True,
+                check=True
+            ).stdout.strip()
+            patch_path = os.path.join(job_dir, f"merge_preview_{final_job_id}_{timestamp}.patch" if format == "patch" else f"merge_preview_{final_job_id}_{timestamp}.diff")
+
+        # Use git format-patch for proper patch files, or git diff for simple diffs
+        if format == "patch":
+            # Generate patch using format-patch if we can determine the range
+            # For simplicity, use git diff and create a patch format
+            patch_cmd = ["git", "diff", start_point]
+        else:
+            patch_cmd = ["git", "diff", start_point]
+
+        patch_result = subprocess.run(
+            patch_cmd,
+            cwd=workspace_dir,
+            capture_output=True,
+            text=True,
+            check=True
+        )
+
+        if patch_result.stdout.strip():
+            # Write patch file
+            with open(patch_path, 'w') as f:
+                # Add header information
+                f.write(f"# Merge preview for job '{final_job_id}'\n")
+                f.write(f"# Generated: {subprocess.run(['date'], capture_output=True, text=True, check=True).stdout.strip()}\n")
+                f.write("# " + "="*60 + "\n")
+                f.write(f"# Job Branch: {current_branch}\n")
+                f.write(f"# Target Branch: {base_branch}\n")
+                f.write(f"# Changed Files: {len(changed_files)}\n")
+                f.write("# " + "="*60 + "\n\n")
+                f.write(patch_result.stdout)
+
+            click.secho(f"   📄 Patch file created: {patch_path}", fg="green")
+            click.echo(f"   📊 Format: {format}")
+
+            # Show summary statistics
+            lines = patch_result.stdout.split('\n')
+            additions = sum(1 for line in lines if line.startswith('+') and not line.startswith('+++'))
+            deletions = sum(1 for line in lines if line.startswith('-') and not line.startswith('---'))
+
+            click.echo(f"   ➕ Additions: {additions} lines")
+            click.echo(f"   ➖ Deletions: {deletions} lines")
+            click.echo(f"   📏 Total changes: {additions + deletions} lines")
+
+        else:
+            click.secho("ℹ️  No diff content generated.", fg="yellow")
+
+        click.secho("   ✅ Merge preview completed successfully", fg="green")
+        click.echo("   💡 To apply this patch: git apply <patch_file>")
+        click.echo("   💡 Or merge manually: git checkout main && git merge <job_branch>")
+
+    except subprocess.CalledProcessError as e:
+        click.secho(f"❌ Git command failed: {e.stderr}", fg="red")
+    except Exception as e:
+        click.secho(f"❌ Error generating merge preview: {e}", fg="red")
+
+
+@role.command(name="list")
+@click.pass_context
+def list_roles(ctx):
+    """List all available agent roles."""
+    jobs_dir = ctx.obj["JOBS_DIR"]
+    click.echo("👥 Executing 'logist role list'")
+    roles = role_manager.list_roles(jobs_dir)
+
+    if not roles:
+        click.echo("📭 No agent roles found.")
+        return
+
+    click.echo("\n📋 Available Agent Roles:")
+    click.echo("-" * 40)
+    for role_item in roles:
+        click.echo(f"- {role_item['name']}: {role_item['description']}")
+    click.echo("-" * 40)
+
+
+@workspace.command(name="cleanup")
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Show what would be cleaned up without actually doing it."
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Override safety checks and force cleanup (dangerous)."
+)
+@click.option(
+    "--job-id",
+    help="Clean up workspace for a specific job only."
+)
+@click.option(
+    "--max-backups",
+    type=int,
+    default=3,
+    help="Maximum number of backups to keep per job."
+)
+@click.option(
+    "--preserve-failed",
+    is_flag=True,
+    help="Preserve workspaces for failed jobs (overrides default policy)."
+)
+@click.pass_context
+def workspace_cleanup(ctx, dry_run: bool, force: bool, job_id: str, max_backups: int, preserve_failed: bool):
+    """Clean up completed workspaces based on policies."""
+    jobs_dir = ctx.obj["JOBS_DIR"]
+    click.echo("🧹 Executing 'logist workspace cleanup'")
+
+    try:
+        # Build cleanup policies
+        cleanup_policies = {
+            "cleanup_completed_jobs": True,
+            "cleanup_failed_jobs_after_days": 7,
+            "cleanup_cancelled_jobs_after_days": 1,
+            "preserve_failed_jobs": preserve_failed,
+            "max_backups_per_job": max_backups
+        }
+
+        click.echo("📋 Cleanup policies:")
+        click.echo(f"   ✅ Clean completed jobs: {cleanup_policies['cleanup_completed_jobs']}")
+        click.echo(f"   📅 Failed job grace period: {cleanup_policies['cleanup_failed_jobs_after_days']} days")
+        click.echo(f"   📅 Cancelled job grace period: {cleanup_policies['cleanup_cancelled_jobs_after_days']} days")
+        click.echo(f"   🛡️  Preserve failed jobs: {cleanup_policies['preserve_failed_jobs']}")
+        click.echo(f"   📦 Max backups per job: {cleanup_policies['max_backups_per_job']}")
+
+        if job_id:
+            click.echo(f"   🎯 Specific job: {job_id}")
+            # Handle single job cleanup
+            job_path = get_job_dir(ctx, job_id)
+            if not job_path:
+                click.secho(f"❌ Job '{job_id}' not found.", fg="red")
+                return
+
+            # Check if cleanup should happen
+            should_cleanup, reason = workspace_utils.should_cleanup_workspace(job_path, cleanup_policies)
+
+            if should_cleanup:
+                if dry_run:
+                    click.echo(f"   📋 Would clean up workspace for job '{job_id}': {reason}")
+                    return
+
+                click.echo(f"   🧹 Cleaning up workspace for job '{job_id}': {reason}")
+
+                # Backup first
+                backup_result = workspace_utils.backup_workspace_before_cleanup(job_path)
+                if backup_result["success"]:
+                    click.echo(f"   💾 Backup created: {os.path.basename(backup_result['backup_archive'])}")
+                else:
+                    if not force:
+                        click.secho(f"❌ Backup failed: {backup_result['error']}", fg="red")
+                        click.echo("   💡 Use --force to skip backup (dangerous)")
+                        return
+                    else:
+                        click.secho("⚠️  Skipping backup due to --force flag", fg="yellow")
+
+                # Clean up
+                workspace_dir = os.path.join(job_path, "workspace")
+                try:
+                    shutil.rmtree(workspace_dir)
+                    click.secho(f"   ✅ Workspace cleaned up for job '{job_id}'", fg="green")
+                except OSError as e:
+                    click.secho(f"❌ Cleanup failed: {e}", fg="red")
+            else:
+                click.echo(f"   ⏸️  Skipping job '{job_id}': {reason}")
+
+        else:
+            click.echo("   🔍 Scanning all jobs for cleanup opportunities...")
+            if dry_run:
+                click.echo("   📋 Dry run mode - no changes will be made")
+
+            # Perform batch cleanup
+            result = workspace_utils.cleanup_completed_workspaces(jobs_dir, cleanup_policies, dry_run=dry_run)
+
+            if result["success"]:
+                click.echo("\n📊 Cleanup Summary:")
+                cleaned_count = len(result["workspaces_cleaned"])
+                backed_up_count = len(result["workspaces_backed_up"])
+                skipped_count = len(result["workspaces_skipped"])
+                errors_count = len(result["errors"])
+
+                click.echo(f"   🧹 Workspaces cleaned: {cleaned_count}")
+                click.echo(f"   💾 Workspaces backed up: {backed_up_count}")
+                click.echo(f"   ⏸️  Workspaces skipped: {skipped_count}")
+
+                if errors_count > 0:
+                    click.secho(f"   ❌ Errors: {errors_count}", fg="red")
+
+                    if dry_run:
+                        click.echo("   📋 Dry run completed successfully")
+
+                # Show details
+                if result["workspaces_cleaned"] and not dry_run:
+                    click.echo("\n🧹 Cleaned workspaces:")
+                    for item in result["workspaces_cleaned"]:
+                        click.echo(f"   • {os.path.basename(item['job_path'])}: {item.get('reason', 'Unknown')}")
+
+                if result["errors"]:
+                    click.echo("\n❌ Errors encountered:")
+                    for error in result["errors"]:
+                        click.echo(f"   • {error}")
+
+                if not dry_run and cleaned_count > 0:
+                    click.secho("   ✅ Workspace cleanup completed!", fg="green")
+                elif dry_run and cleaned_count > 0:
+                    click.echo(f"   📋 Dry run: {cleaned_count} workspaces would be cleaned")
+                else:
+                    click.echo("   ℹ️  No workspaces needed cleanup")
+
+            else:
+                click.secho("❌ Cleanup operation failed", fg="red")
+                for error in result["errors"]:
+                    click.echo(f"   • {error}")
+
+    except Exception as e:
+        click.secho(f"❌ Error during workspace cleanup: {e}", fg="red")
 
 
 @role.command(name="list")

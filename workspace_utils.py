@@ -1,6 +1,8 @@
 import os
+import shutil
 import subprocess
-from typing import List, Dict, Any
+from datetime import datetime, timedelta
+from typing import List, Dict, Any, Optional
 
 def find_git_root(cwd=None):
     """Find the root directory of the Git repository from the current working directory."""
@@ -268,5 +270,445 @@ def perform_git_commit(
         result["error"] = f"Git command failed: {e.stderr}"
     except Exception as e:
         result["error"] = f"Unexpected error: {str(e)}"
+
+    return result
+
+
+def create_job_branch(job_id: str, job_dir: str, base_branch: str = "main") -> Dict[str, Any]:
+    """
+    Creates an isolated Git branch for a job to prevent conflicts between workspaces.
+
+    Args:
+        job_id: Unique job identifier
+        job_dir: Job directory path
+        base_branch: Base branch to branch from (default: main)
+
+    Returns:
+        Dict with creation status and branch information
+    """
+    workspace_dir = os.path.join(job_dir, "workspace")
+    result = {
+        "success": False,
+        "branch_name": f"logist/job/{job_id}",
+        "base_branch": base_branch,
+        "error": None
+    }
+
+    if not verify_workspace_exists(job_dir):
+        result["error"] = "Workspace not initialized"
+        return result
+
+    try:
+        # Check if branch already exists
+        branch_result = subprocess.run(
+            ["git", "branch", "--list", result["branch_name"]],
+            cwd=workspace_dir,
+            capture_output=True,
+            text=True,
+            check=True
+        )
+
+        if result["branch_name"] in branch_result.stdout:
+            # Branch exists, just switch to it
+            subprocess.run(
+                ["git", "checkout", result["branch_name"]],
+                cwd=workspace_dir,
+                check=True,
+                capture_output=True,
+                text=True
+            )
+            result["success"] = True
+            return result
+
+        # Switch to base branch first
+        subprocess.run(
+            ["git", "checkout", base_branch],
+            cwd=workspace_dir,
+            check=True,
+            capture_output=True,
+            text=True
+        )
+
+        # Pull latest changes
+        subprocess.run(
+            ["git", "pull", "origin", base_branch],
+            cwd=workspace_dir,
+            check=True,
+            capture_output=True,
+            text=True
+        )
+
+        # Create and switch to new branch
+        subprocess.run(
+            ["git", "checkout", "-b", result["branch_name"]],
+            cwd=workspace_dir,
+            check=True,
+            capture_output=True,
+            text=True
+        )
+
+        result["success"] = True
+
+    except subprocess.CalledProcessError as e:
+        result["error"] = f"Git branch operation failed: {e.stderr}"
+    except Exception as e:
+        result["error"] = f"Unexpected error: {str(e)}"
+
+    return result
+
+
+def setup_isolated_workspace(job_id: str, job_dir: str, base_branch: str = "main") -> Dict[str, Any]:
+    """
+    Sets up workspace with branch isolation instead of simple cloning.
+
+    This provides better isolation and persistence across sessions.
+
+    Args:
+        job_id: Unique job identifier
+        job_dir: Job directory path
+        base_branch: Base branch to create workspace from
+
+    Returns:
+        Dict with setup status and workspace information
+    """
+    result = {
+        "success": False,
+        "branch_created": False,
+        "workspace_prepared": False,
+        "branch_name": f"logist/job/{job_id}",
+        "error": None
+    }
+
+    try:
+        git_root = find_git_root()
+        if git_root is None:
+            result["error"] = "Not in a Git repository"
+            return result
+
+        workspace_dir = os.path.join(job_dir, "workspace")
+        workspace_git = os.path.join(workspace_dir, ".git")
+
+        # Check if workspace needs to be created or is already set up
+        if not os.path.exists(workspace_git):
+            # Create fresh workspace directory
+            if os.path.exists(workspace_dir):
+                shutil.rmtree(workspace_dir)
+
+            os.makedirs(job_dir, exist_ok=True)
+
+            # Clone repository
+            subprocess.run(
+                ["git", "clone", git_root, "workspace"],
+                cwd=job_dir,
+                check=True,
+                capture_output=True,
+                text=True
+            )
+
+        result["workspace_prepared"] = True
+
+        # Create isolated branch for this job
+        branch_result = create_job_branch(job_id, job_dir, base_branch)
+        if not branch_result["success"]:
+            result["error"] = f"Failed to create job branch: {branch_result['error']}"
+            return result
+
+        result["branch_created"] = True
+        result["success"] = True
+
+    except subprocess.CalledProcessError as e:
+        result["error"] = f"Git operation failed: {e.stderr}"
+    except Exception as e:
+        result["error"] = f"Unexpected error: {str(e)}"
+
+    return result
+
+
+def get_workspace_lifecycle_status(job_dir: str) -> Dict[str, Any]:
+    """
+    Gets comprehensive lifecycle status for a workspace.
+
+    Returns status info needed for cleanup policy decisions.
+
+    Args:
+        job_dir: Job directory path
+
+    Returns:
+        Dict with workspace lifecycle information
+    """
+    workspace_dir = os.path.join(job_dir, "workspace")
+    status = {
+        "workspace_exists": False,
+        "branch_name": None,
+        "current_branch": None,
+        "has_changes": False,
+        "last_modified": None,
+        "job_status": None,
+        "ready_for_cleanup": False
+    }
+
+    if not os.path.exists(workspace_dir):
+        return status
+
+    status["workspace_exists"] = True
+
+    # Get directory modification time
+    try:
+        status["last_modified"] = datetime.fromtimestamp(os.path.getmtime(workspace_dir))
+    except OSError:
+        status["last_modified"] = None
+
+    # Check git status
+    if verify_workspace_exists(job_dir):
+        try:
+            # Get current branch
+            branch_result = subprocess.run(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                cwd=workspace_dir,
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            status["current_branch"] = branch_result.stdout.strip()
+
+            # Check for uncommitted changes
+            status_result = subprocess.run(
+                ["git", "status", "--porcelain"],
+                cwd=workspace_dir,
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            status["has_changes"] = bool(status_result.stdout.strip())
+
+        except subprocess.CalledProcessError:
+            pass
+
+    # Check job manifest for job status
+    manifest_path = os.path.join(job_dir, "job_manifest.json")
+    if os.path.exists(manifest_path):
+        try:
+            import json
+            with open(manifest_path, 'r') as f:
+                manifest = json.load(f)
+            status["job_status"] = manifest.get("status")
+
+            # Extract branch name from manifest if stored
+            if "workspace_branch" in manifest:
+                status["branch_name"] = manifest["workspace_branch"]
+
+        except (json.JSONDecodeError, KeyError):
+            pass
+
+    return status
+
+
+def should_cleanup_workspace(job_dir: str, cleanup_policies: Optional[Dict[str, Any]] = None) -> tuple[bool, str]:
+    """
+    Determines if a workspace should be cleaned up based on policies and status.
+
+    Args:
+        job_dir: Job directory path
+        cleanup_policies: Optional cleanup policy configuration
+
+    Returns:
+        Tuple of (should_cleanup, reason)
+    """
+    if cleanup_policies is None:
+        cleanup_policies = {
+            "cleanup_completed_jobs": True,
+            "cleanup_failed_jobs_after_days": 7,
+            "cleanup_cancelled_jobs_after_days": 1,
+            "preserve_failed_jobs": True
+        }
+
+    status = get_workspace_lifecycle_status(job_dir)
+
+    if not status["workspace_exists"]:
+        return False, "Workspace does not exist"
+
+    # Always cleanup if job is successfully completed
+    if status["job_status"] == "SUCCESS" and cleanup_policies["cleanup_completed_jobs"]:
+        return True, "Job completed successfully"
+
+    # Never cleanup failed jobs if preserve_failed_jobs is enabled
+    if status["job_status"] == "FAILED" and cleanup_policies["preserve_failed_jobs"]:
+        return False, "Preserving failed job for debugging"
+
+    # Cleanup cancelled jobs after grace period
+    if status["job_status"] == "CANCELED":
+        grace_days = cleanup_policies.get("cleanup_cancelled_jobs_after_days", 1)
+        if status["last_modified"] and \
+           (datetime.now() - status["last_modified"]) > timedelta(days=grace_days):
+            return True, f"Cancelled job older than {grace_days} days"
+        return False, f"Within grace period for cancelled jobs ({grace_days} days)"
+
+    # Cleanup failed jobs after grace period (if not preserving)
+    if status["job_status"] == "FAILED":
+        grace_days = cleanup_policies.get("cleanup_failed_jobs_after_days", 7)
+        if status["last_modified"] and \
+           (datetime.now() - status["last_modified"]) > timedelta(days=grace_days):
+            return True, f"Failed job older than {grace_days} days"
+        return False, f"Within grace period for failed jobs ({grace_days} days)"
+
+    # Don't cleanup active jobs
+    if status["job_status"] in ["PENDING", "RUNNING", "REVIEWING", "INTERVENTION_REQUIRED", "APPROVAL_REQUIRED"]:
+        return False, "Job is still active"
+
+    return False, "No cleanup policy matched"
+
+
+def backup_workspace_before_cleanup(job_dir: str, backup_dir: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Creates backup of workspace before cleanup for safety.
+
+    Args:
+        job_dir: Job directory path
+        backup_dir: Optional backup directory path
+
+    Returns:
+        Dict with backup operation results
+    """
+    if backup_dir is None:
+        backup_dir = os.path.join(job_dir, ".workspace_backup")
+
+    workspace_dir = os.path.join(job_dir, "workspace")
+    result = {
+        "success": False,
+        "backup_path": backup_dir,
+        "error": None
+    }
+
+    if not os.path.exists(workspace_dir):
+        result["error"] = "Workspace does not exist to backup"
+        return result
+
+    try:
+        # Create backup directory
+        os.makedirs(backup_dir, exist_ok=True)
+
+        # Get workspace status for backup metadata
+        status = get_workspace_lifecycle_status(job_dir)
+
+        # Create archive of workspace
+        import tarfile
+        from datetime import datetime
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_archive = os.path.join(backup_dir, f"workspace_backup_{timestamp}.tar.gz")
+
+        with tarfile.open(backup_archive, "w:gz") as tar:
+            tar.add(workspace_dir, arcname="workspace")
+
+        # Save metadata
+        metadata = {
+            "backup_timestamp": timestamp,
+            "original_workspace_path": workspace_dir,
+            "job_dir": job_dir,
+            "workspace_status": status,
+            "backup_created": datetime.now().isoformat()
+        }
+
+        metadata_path = os.path.join(backup_dir, f"backup_metadata_{timestamp}.json")
+        import json
+        with open(metadata_path, 'w') as f:
+            json.dump(metadata, f, indent=2)
+
+        result["success"] = True
+        result["backup_archive"] = backup_archive
+        result["metadata_path"] = metadata_path
+
+    except Exception as e:
+        result["error"] = f"Backup failed: {str(e)}"
+
+    return result
+
+
+def cleanup_completed_workspaces(jobs_dir: str, cleanup_policies: Optional[Dict[str, Any]] = None,
+                                dry_run: bool = True) -> Dict[str, Any]:
+    """
+    Performs automated cleanup of completed workspaces based on policies.
+
+    Args:
+        jobs_dir: Root jobs directory
+        cleanup_policies: Optional cleanup policies
+        dry_run: If True, only report what would be cleaned without actually cleaning
+
+    Returns:
+        Dict with cleanup operation results
+    """
+    result = {
+        "success": True,
+        "workspaces_cleaned": [],
+        "workspaces_backed_up": [],
+        "workspaces_skipped": [],
+        "errors": []
+    }
+
+    if not cleanup_policies:
+        cleanup_policies = {
+            "cleanup_completed_jobs": True,
+            "cleanup_failed_jobs_after_days": 7,
+            "cleanup_cancelled_jobs_after_days": 1,
+            "preserve_failed_jobs": True,
+            "max_backups_per_job": 3
+        }
+
+    # Find all job directories
+    if not os.path.exists(jobs_dir):
+        result["errors"].append(f"Jobs directory does not exist: {jobs_dir}")
+        result["success"] = False
+        return result
+
+    try:
+        for item in os.listdir(jobs_dir):
+            job_path = os.path.join(jobs_dir, item)
+            if not os.path.isdir(job_path):
+                continue
+
+            # Check if this looks like a job directory
+            if not os.path.exists(os.path.join(job_path, "job_manifest.json")):
+                continue
+
+            # Evaluate cleanup decision
+            should_cleanup, reason = should_cleanup_workspace(job_path, cleanup_policies)
+
+            if should_cleanup:
+                if dry_run:
+                    result["workspaces_cleaned"].append({
+                        "job_path": job_path,
+                        "reason": reason,
+                        "dry_run": True
+                    })
+                else:
+                    # Perform backup first
+                    backup_result = backup_workspace_before_cleanup(job_path)
+                    if backup_result["success"]:
+                        result["workspaces_backed_up"].append(job_path)
+                    else:
+                        result["errors"].append(f"Backup failed for {job_path}: {backup_result['error']}")
+                        continue  # Skip cleanup if backup failed
+
+                    # Cleanup workspace
+                    workspace_dir = os.path.join(job_path, "workspace")
+                    try:
+                        shutil.rmtree(workspace_dir)
+                        result["workspaces_cleaned"].append({
+                            "job_path": job_path,
+                            "reason": reason,
+                            "backed_up": True
+                        })
+                    except OSError as e:
+                        result["errors"].append(f"Cleanup failed for {job_path}: {e}")
+                        result["success"] = False
+            else:
+                result["workspaces_skipped"].append({
+                    "job_path": job_path,
+                    "reason": reason
+                })
+
+    except OSError as e:
+        result["errors"].append(f"Directory scan failed: {e}")
+        result["success"] = False
 
     return result
