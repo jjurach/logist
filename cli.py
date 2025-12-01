@@ -756,26 +756,10 @@ class JobManager:
         job_id = os.path.basename(os.path.abspath(job_dir))
 
         try:
-            # Use advanced isolated workspace setup
+            # Use advanced isolated workspace setup (clones HEAD, no branch creation)
             result = workspace_utils.setup_isolated_workspace(job_id, job_dir, base_branch="main")
             if not result["success"]:
                 raise click.ClickException(f"Failed to setup isolated workspace: {result['error']}")
-
-            # Store branch information in job manifest for tracking
-            manifest_path = os.path.join(job_dir, "job_manifest.json")
-            if os.path.exists(manifest_path):
-                try:
-                    import json
-                    with open(manifest_path, 'r') as f:
-                        manifest = json.load(f)
-
-                    manifest["workspace_branch"] = result["branch_name"]
-
-                    with open(manifest_path, 'w') as f:
-                        json.dump(manifest, f, indent=2)
-                except (json.JSONDecodeError, OSError):
-                    # Manifest operations are best-effort; don't fail if they don't work
-                    pass
 
         except Exception as e:
             raise click.ClickException(f"Advanced workspace setup failed: {e}")

@@ -435,7 +435,6 @@ def get_workspace_lifecycle_status(job_dir: str) -> Dict[str, Any]:
     workspace_dir = os.path.join(job_dir, "workspace")
     status = {
         "workspace_exists": False,
-        "branch_name": None,
         "current_branch": None,
         "has_changes": False,
         "last_modified": None,
@@ -488,10 +487,6 @@ def get_workspace_lifecycle_status(job_dir: str) -> Dict[str, Any]:
             with open(manifest_path, 'r') as f:
                 manifest = json.load(f)
             status["job_status"] = manifest.get("status")
-
-            # Extract branch name from manifest if stored
-            if "workspace_branch" in manifest:
-                status["branch_name"] = manifest["workspace_branch"]
 
         except (json.JSONDecodeError, KeyError):
             pass
