@@ -2442,8 +2442,22 @@ def activate_job(ctx, job_id: str | None, rank: int):
         if new_status != JobStates.PENDING:
             raise click.ClickException(f"❌ State transition failed: expected PENDING, got {new_status}")
 
+        # Ensure current_phase is initialized when activating
+        # If current_phase is missing and phases exist, set it to first phase
+        # Otherwise default to "default" for single-phase execution
+        if manifest.get("current_phase") is None:
+            phases = manifest.get("phases", [])
+            if phases and len(phases) > 0:
+                current_phase = phases[0]["name"]
+                click.echo(f"   📍 Initialized current_phase to first phase: '{current_phase}'")
+            else:
+                current_phase = "default"  # Default for jobs without explicit phases
+                click.echo(f"   📍 Initialized current_phase to default: '{current_phase}'")
+        else:
+            current_phase = manifest["current_phase"]  # Keep existing if already set
+
         # Update job manifest
-        update_job_manifest(job_dir=job_dir, new_status=new_status)
+        update_job_manifest(job_dir=job_dir, new_status=new_status, new_phase=current_phase)
 
         # Load/update jobs index to add job to queue
         jobs_dir = ctx.obj["JOBS_DIR"]
