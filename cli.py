@@ -14,7 +14,7 @@ from typing import Dict, Any, List, Optional
 import click
 
 from logist import workspace_utils # Import the new module
-from logist.job_state import JobStateError, load_job_manifest, get_current_state_and_role, update_job_manifest, transition_state
+from logist.job_state import JobStateError, load_job_manifest, get_current_state_and_role, update_job_manifest, transition_state, JobStates
 from logist.job_processor import execute_llm_with_cline, handle_execution_error, validate_evidence_files, JobProcessorError
 from logist.job_context import assemble_job_context, JobContextError # Now exists
 from logist.recovery import validate_state_persistence, get_recovery_status, RecoveryError
@@ -546,7 +546,7 @@ class JobManager:
         job_manifest = {
             "job_id": job_spec.get('job_id', job_id) if job_spec else job_id,
             "description": job_spec.get('description', f'Job {job_id}') if job_spec else f'Job {job_id}',
-            "status": "PENDING",
+            "status": JobStates.DRAFT,  # Changed from PENDING to DRAFT as initial state
             "current_phase": job_spec.get('phases', [{}])[0].get('name', None) if job_spec and job_spec.get('phases') else None,
             "metrics": {
                 "cumulative_cost": 0,
@@ -668,16 +668,24 @@ class JobManager:
 
             jobs_data = []
             jobs_map = jobs_index.get("jobs", {})
+            queue = jobs_index.get("queue", [])
+
+            # Create queue position mapping
+            queue_positions = {}
+            for idx, job_id in enumerate(queue):
+                queue_positions[job_id] = idx
 
             # Process each job
             for job_id, job_path in jobs_map.items():
                 job_manifest_path = os.path.join(job_path, "job_manifest.json")
+                queue_pos = queue_positions.get(job_id)
                 job_info = {
                     "job_id": job_id,
                     "path": job_path,
                     "status": "UNKNOWN",
                     "description": "No description available",
-                    "phase": "unknown"
+                    "phase": "unknown",
+                    "queue_position": queue_pos
                 }
 
                 try:
@@ -817,7 +825,11 @@ def init_command(jobs_dir: str) -> bool:
                 click.secho(f"⚠️  Warning: Schema file '{role_file}' not found in '{schemas_dir}'", fg="yellow")
 
         jobs_index_path = os.path.join(jobs_dir, "jobs_index.json")
-        jobs_index_data = {"current_job_id": None}
+        jobs_index_data = {
+            "current_job_id": None,
+            "jobs": {},
+            "queue": []
+        }
         with open(jobs_index_path, 'w') as f:
             json.dump(jobs_index_data, f, indent=2)
 
@@ -907,6 +919,112 @@ def select_job(ctx, job_id: str):
     click.echo(f"✅ '{job_id}' is now the current job.")
 
 
+@job.command(name="config")
+@click.argument("job_id", required=False)
+@click.option("--objective", help="Set the job objective")
+@click.option("--details", help="Set the job details/requirements")
+@click.option("--acceptance", help="Set the acceptance criteria")
+@click.option("--prompt", help="Set the task prompt description")
+@click.option("--files", help="Set relevant files (comma-separated)")
+@click.pass_context
+def config_job(ctx, job_id: str | None, objective: str, details: str, acceptance: str, prompt: str, files: str):
+    """Configure a DRAFT job with properties before activation."""
+    click.echo("⚙️  Executing 'logist job config'")
+
+    # Get job ID
+    final_job_id = get_job_id(ctx, job_id)
+    if not final_job_id:
+        raise click.ClickException("❌ No job ID provided and no current job is selected.")
+
+    job_dir = get_job_dir(ctx, final_job_id)
+    if not job_dir:
+        raise click.ClickException(f"❌ Job '{final_job_id}' not found.")
+
+    # Validate that at least one option is provided
+    if not any([objective, details, acceptance, prompt, files]):
+        raise click.ClickException("❌ At least one configuration option must be provided (--objective, --details, --acceptance, --prompt, or --files)")
+
+    # Check job state - must be DRAFT to configure
+    try:
+        manifest = load_job_manifest(job_dir)
+        current_status = manifest.get("status")
+        if current_status != JobStates.DRAFT:
+            raise click.ClickException(f"❌ Job '{final_job_id}' is in '{current_status}' state. Only DRAFT jobs can be configured.")
+    except JobStateError as e:
+        raise click.ClickException(f"❌ Error loading job manifest: {e}")
+
+    # Load existing config or create new one
+    config_path = os.path.join(job_dir, "config.json")
+    try:
+        if os.path.exists(config_path):
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+        else:
+            config = {}
+    except json.JSONDecodeError as e:
+        raise click.ClickException(f"❌ Invalid existing config.json: {e}")
+
+    # Update config with provided values
+    updated = False
+    if objective is not None:
+        config["objective"] = objective
+        updated = True
+        click.echo(f"   📝 Set objective: {objective}")
+
+    if details is not None:
+        config["details"] = details
+        updated = True
+        click.echo(f"   📝 Set details: {details}")
+
+    if acceptance is not None:
+        config["acceptance"] = acceptance
+        updated = True
+        click.echo(f"   📝 Set acceptance criteria: {acceptance}")
+
+    if prompt is not None:
+        config["prompt"] = prompt
+        updated = True
+        click.echo(f"   📝 Set prompt: {prompt}")
+
+    if files is not None:
+        files_list = [f.strip() for f in files.split(',') if f.strip()]
+        config["files"] = files_list
+        updated = True
+        click.echo(f"   📝 Set files: {', '.join(files_list)}")
+
+    if updated:
+        # Validate against schema
+        try:
+            from jsonschema import validate, ValidationError
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            schema_path = os.path.join(script_dir, "..", "schemas", "job_config.json")
+            with open(schema_path, 'r') as f:
+                schema = json.load(f)
+            validate(instance=config, schema=schema)
+        except ValidationError as e:
+            raise click.ClickException(f"❌ Configuration validation failed: {e.message}")
+        except (OSError, json.JSONDecodeError) as e:
+            raise click.ClickException(f"❌ Error loading schema: {e}")
+
+        # Save updated config
+        try:
+            with open(config_path, 'w') as f:
+                json.dump(config, f, indent=2)
+            click.secho(f"   ✅ Job '{final_job_id}' configuration updated successfully", fg="green")
+        except OSError as e:
+            raise click.ClickException(f"❌ Failed to save configuration: {e}")
+    else:
+        click.echo("   ℹ️  No changes made to configuration")
+
+    # Show current config summary
+    click.echo("   📋 Current configuration:")
+    for key, value in config.items():
+        if key == "files":
+            click.echo(f"      {key}: {', '.join(value) if value else 'none'}")
+        else:
+            click.echo(f"      {key}: {value if value else 'none'}")
+
+
 @job.command()
 @click.argument("job_id", required=False)
 @click.option("--model", default="grok-code-fast-1", help="LLM model for execution")
@@ -915,14 +1033,64 @@ def select_job(ctx, job_id: str):
 def run(ctx, job_id: str | None, model: str, resume: bool):
     """Execute a job continuously until completion."""
     click.echo("🎯 Executing 'logist job run'")
-    if final_job_id := get_job_id(ctx, job_id):
-        job_dir = get_job_dir(ctx, final_job_id)
-        if job_dir is None:
-            click.secho("❌ Could not find job directory.", fg="red")
-            return
-        engine.run_job(ctx, final_job_id, job_dir)
+
+    jobs_dir = ctx.obj["JOBS_DIR"]
+    jobs_index_path = os.path.join(jobs_dir, "jobs_index.json")
+
+    # If specific job_id provided, use it (bypass queue)
+    if job_id:
+        final_job_id = job_id
     else:
-        click.secho("❌ No job ID provided and no current job is selected.", fg="red")
+        # Get next job from queue
+        try:
+            with open(jobs_index_path, 'r') as f:
+                jobs_index = json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            raise click.ClickException(f"❌ Failed to read jobs index: {e}")
+
+        queue = jobs_index.get("queue", [])
+        if not queue:
+            click.secho("📭 No jobs in queue. Add jobs with 'logist job activate'.", fg="yellow")
+            return
+
+        final_job_id = queue[0]
+        click.echo(f"   📋 Selected job from queue: '{final_job_id}' (position 0)")
+
+    job_dir = get_job_dir(ctx, final_job_id)
+    if job_dir is None:
+        click.secho("❌ Could not find job directory.", fg="red")
+        return
+
+    # Execute the job
+    success = engine.run_job(ctx, final_job_id, job_dir)
+
+    # If execution completed successfully and job succeeded, remove from queue
+    if success:
+        try:
+            manifest = load_job_manifest(job_dir)
+            final_status = manifest.get("status")
+            if final_status in ["SUCCESS", "CANCELED"]:
+                # Remove completed job from queue
+                try:
+                    with open(jobs_index_path, 'r') as f:
+                        jobs_index = json.load(f)
+
+                    queue = jobs_index.get("queue", [])
+                    if final_job_id in queue:
+                        queue.remove(final_job_id)
+                        click.echo(f"   🗑️  Removed '{final_job_id}' from queue (status: {final_status})")
+
+                        # Save updated queue
+                        with open(jobs_index_path, 'w') as f:
+                            json.dump(jobs_index, f, indent=2)
+
+                except (json.JSONDecodeError, OSError, JobStateError):
+                    # Don't fail if queue cleanup fails - job execution succeeded
+                    click.secho("   ⚠️  Warning: Failed to remove job from queue", fg="yellow")
+
+        except Exception as e:
+            # Don't fail if status check fails - job execution might still have succeeded
+            click.secho(f"   ⚠️  Warning: Failed to check final job status: {e}", fg="yellow")
 
 
 @job.command()
@@ -1428,31 +1596,58 @@ def list_jobs(ctx):
 
     jobs_index_path = os.path.join(jobs_dir, "jobs_index.json")
     current_job_id = None
+    queue = []
     try:
         if os.path.exists(jobs_index_path):
             with open(jobs_index_path, 'r') as f:
                 jobs_index = json.load(f)
             current_job_id = jobs_index.get("current_job_id")
+            queue = jobs_index.get("queue", [])
     except (json.JSONDecodeError, OSError):
         pass
 
     click.echo("\n📋 Active Jobs:")
-    click.echo("-" * 80)
-    click.echo("Job ID               Status       Description" )
-    click.echo("-" * 80)
+    click.echo("-" * 100)
+    click.echo("Job ID               Status       Queue Pos   Description")
+    click.echo("-" * 100)
 
     for job in jobs:
         marker = " 👈" if job["job_id"] == current_job_id else ""
         status = job["status"]
+
+        # Format queue position
+        queue_pos = job.get("queue_position")
+        if queue_pos is not None:
+            if queue_pos == 0 and len(queue) > 0 and queue[0] == job["job_id"]:
+                queue_pos_display = click.style(f"[{queue_pos}] 🏃", fg="green", bold=True)  # Next to run
+            else:
+                queue_pos_display = f"[{queue_pos}]"
+        else:
+            queue_pos_display = "—"
+
+        # Color status
         if status == "PENDING":
             status_display = click.style(status, fg="yellow")
+        elif status == "DRAFT":
+            status_display = click.style(status, fg="blue")
         elif status in ["RUNNING", "SUCCESS"]:
             status_display = click.style(status, fg="green")
         elif status in ["STUCK", "FAILED", "CANCELED"]:
             status_display = click.style(status, fg="red")
         else:
             status_display = status
-        click.echo(f"{job['job_id']:<20} {status_display:<12} {job['description']}{marker}")
+
+        click.echo(f"{job['job_id']:<20} {status_display:<12} {queue_pos_display:<12} {job['description']}{marker}")
+
+    # Show queue summary
+    if queue:
+        click.echo("\n📋 Execution Queue:")
+        click.echo("-" * 40)
+        for i, job_id in enumerate(queue):
+            next_indicator = " 🏃 NEXT" if i == 0 else ""
+            job_desc = next((j["description"] for j in jobs if j["job_id"] == job_id), "Unknown job")
+            job_desc_truncated = job_desc[:40] + "..." if len(job_desc) > 40 else job_desc
+            click.echo(f"  {i}: {job_id} - {job_desc_truncated}{next_indicator}")
 
 
 @job.command(name="git-status")
@@ -2070,6 +2265,133 @@ def init(ctx):
         click.echo("   📎 Copied worker.json and supervisor.json")
     else:
         click.secho("❌ Failed to initialize jobs directory.", fg="red")
+
+
+@job.command(name="activate")
+@click.argument("job_id", required=False)
+@click.option(
+    "--rank",
+    type=int,
+    help="Queue position (0=front, 1=second, etc.). Default: append to end."
+)
+@click.pass_context
+def activate_job(ctx, job_id: str | None, rank: int):
+    """Activate a DRAFT job for execution and add to processing queue."""
+    click.echo("🚀 Executing 'logist job activate'")
+
+    # Get job ID
+    final_job_id = get_job_id(ctx, job_id)
+    if not final_job_id:
+        raise click.ClickException("❌ No job ID provided and no current job is selected.")
+
+    job_dir = get_job_dir(ctx, final_job_id)
+    if not job_dir:
+        raise click.ClickException(f"❌ Job '{final_job_id}' not found.")
+
+    # Check job state - must be DRAFT to activate
+    try:
+        manifest = load_job_manifest(job_dir)
+        current_status = manifest.get("status")
+        if current_status != JobStates.DRAFT:
+            raise click.ClickException(f"❌ Job '{final_job_id}' is in '{current_status}' state. Only DRAFT jobs can be activated.")
+    except JobStateError as e:
+        raise click.ClickException(f"❌ Error loading job manifest: {e}")
+
+    # Validate rank parameter
+    if rank is not None and rank < 0:
+        raise click.ClickException("❌ Rank must be a non-negative integer.")
+
+    try:
+        # Transition job state from DRAFT to PENDING
+        new_status = transition_state(JobStates.DRAFT, "System", "ACTIVATED")
+        if new_status != JobStates.PENDING:
+            raise click.ClickException(f"❌ State transition failed: expected PENDING, got {new_status}")
+
+        # Update job manifest
+        update_job_manifest(job_dir=job_dir, new_status=new_status)
+
+        # Load/update jobs index to add job to queue
+        jobs_dir = ctx.obj["JOBS_DIR"]
+        jobs_index_path = os.path.join(jobs_dir, "jobs_index.json")
+
+        try:
+            with open(jobs_index_path, 'r') as f:
+                jobs_index = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            jobs_index = {"current_job_id": None, "jobs": {}}
+
+        # Initialize queue if not present
+        if "queue" not in jobs_index:
+            jobs_index["queue"] = []
+
+        # Remove job from queue if already present (shouldn't be, but safety check)
+        if final_job_id in jobs_index["queue"]:
+            jobs_index["queue"].remove(final_job_id)
+
+        # Insert job at specified rank or append to end
+        if rank is not None:
+            if rank >= len(jobs_index["queue"]):
+                jobs_index["queue"].append(final_job_id)
+            else:
+                jobs_index["queue"].insert(rank, final_job_id)
+        else:
+            jobs_index["queue"].append(final_job_id)
+
+        # Save updated jobs index
+        with open(jobs_index_path, 'w') as f:
+            json.dump(jobs_index, f, indent=2)
+
+        click.secho(f"   ✅ Job '{final_job_id}' activated successfully!", fg="green")
+        click.echo(f"   🔄 Status changed: {JobStates.DRAFT} → {new_status}")
+        click.echo(f"   📊 Queue position: {jobs_index['queue'].index(final_job_id)}")
+
+        # Generate prompt.md if config exists
+        config_path = os.path.join(job_dir, "config.json")
+        prompt_path = os.path.join(job_dir, "prompt.md")
+
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, 'r') as f:
+                    config = json.load(f)
+
+                prompt_content = []
+                if config.get("prompt"):
+                    prompt_content.append(config["prompt"])
+                    prompt_content.append("")  # Blank line
+
+                sections = [
+                    ("objective", "Objective"),
+                    ("details", "Details"),
+                    ("acceptance", "Acceptance Criteria")
+                ]
+
+                for key, title in sections:
+                    if config.get(key):
+                        prompt_content.append(f"<{key}>")
+                        prompt_content.append(config[key])
+                        prompt_content.append(f"</{key}>")
+                        prompt_content.append("")  # Blank line
+
+                if prompt_content:
+                    with open(prompt_path, 'w') as f:
+                        f.write("\n".join(prompt_content).rstrip())
+
+                    click.echo("   📝 Generated prompt.md from configuration")
+            except (json.JSONDecodeError, OSError) as e:
+                click.secho(f"   ⚠️  Failed to generate prompt.md: {e}", fg="yellow")
+        else:
+            click.echo("   ℹ️  No configuration found - skipping prompt.md generation")
+
+        # Show final queue state
+        if jobs_index["queue"]:
+            click.echo("   📋 Current queue:")
+            for i, queue_job_id in enumerate(jobs_index["queue"]):
+                marker = " ←" if queue_job_id == final_job_id else ""
+                click.echo(f"      {i}: {queue_job_id}{marker}")
+
+    except (click.ClickException, Exception) as e:
+        click.secho(f"❌ Error during job activation: {e}", fg="red")
+        raise
 
 
 if __name__ == "__main__":

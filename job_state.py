@@ -6,6 +6,16 @@ class JobStateError(Exception):
     """Custom exception for job state related errors."""
     pass
 
+# Job state constants
+class JobStates:
+    """Constants for job lifecycle states."""
+
+    # Initial state - job is configured but not yet activated for execution
+    DRAFT = "DRAFT"
+
+    # Ready for execution - job can be run
+    PENDING = "PENDING"
+
 def load_job_manifest(job_dir: str) -> Dict[str, Any]:
     """
     Loads the job manifest from the specified job directory.
@@ -74,9 +84,9 @@ def transition_state(current_status: str, agent_role: str, response_action: str)
     Determines the next state based on current status, agent role, and LLM response action.
 
     Args:
-        current_status: Current job status (e.g., "PENDING", "RUNNING").
+        current_status: Current job status (e.g., "DRAFT", "PENDING", "RUNNING").
         agent_role: The agent that executed ("Worker" or "Supervisor").
-        response_action: LLM response action ("COMPLETED", "STUCK", "RETRY").
+        response_action: LLM response action ("COMPLETED", "STUCK", "RETRY", "ACTIVATED").
 
     Returns:
         The next status string.
@@ -85,11 +95,16 @@ def transition_state(current_status: str, agent_role: str, response_action: str)
         JobStateError: If an invalid state transition is attempted.
     """
     # State machine transitions based on 04_state_machine.md
+    # Includes DRAFT as initial state and ACTIVATED transition from DRAFT→PENDING
     transitions = {
-        ("PENDING", "Worker", "COMPLETED"): "RUNNING",  # Should actually go to REVIEW_REQUIRED after worker
+        # DRAFT state transitions (only ACTIVATED is allowed from DRAFT)
+        (JobStates.DRAFT, "System", "ACTIVATED"): JobStates.PENDING,
+
+        # PENDING and execution transitions
+        (JobStates.PENDING, "Worker", "COMPLETED"): "RUNNING",  # Should actually go to REVIEW_REQUIRED after worker
         ("RUNNING", "Worker", "COMPLETED"): "REVIEW_REQUIRED",
         ("RUNNING", "Worker", "STUCK"): "INTERVENTION_REQUIRED",
-        ("RUNNING", "Worker", "RETRY"): "PENDING",
+        ("RUNNING", "Worker", "RETRY"): JobStates.PENDING,
 
         ("REVIEW_REQUIRED", "Supervisor", "COMPLETED"): "APPROVAL_REQUIRED",
         ("REVIEW_REQUIRED", "Supervisor", "STUCK"): "INTERVENTION_REQUIRED",

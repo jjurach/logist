@@ -8,9 +8,14 @@ This document defines the deterministic state machine used by the Logist workflo
 
 These states describe the normal, automated execution path of a task.
 
+* **DRAFT**
+    * **Description:** The job has been created but is not yet configured for execution. Users can set objectives, details, acceptance criteria, and other properties before activation.
+    * **Transition From:** *Initial State*, Creation.
+    * **Next Automated States:** PENDING (via activation).
+
 * **PENDING**
     * **Description:** The task is ready to run but is waiting for the scheduler or for its dependencies to complete.
-    * **Transition From:** *Initial State*, DEPENDENCIES\_MET, RESUBMIT.
+    * **Transition From:** DRAFT (activated), DEPENDENCIES\_MET, RESUBMIT.
     * **Next Automated States:** RUNNING, CANCELED.
 
 * **RUNNING**
@@ -72,9 +77,12 @@ Logist implements a structured error handling flow that cleanly separates concer
 **Note:** The old agent-centric state ownership is deprecated in favor of the command-driven model above. States now define what command to run next, not which agent owns the state.
 
 ### Command-Driven Flow
-1. **Worker Execution**: `PENDING` → `RUNNING` (worker) → `REVIEW_REQUIRED`
-2. **Supervisor Review**: `REVIEW_REQUIRED` → `REVIEWING` (supervisor) → `APPROVAL_REQUIRED` or `INTERVENTION_REQUIRED`
-3. **Human Decisions**: Final gates where humans make approval/rejection/termination decisions
+1. **Job Creation**: Create job → `DRAFT` (initial state for configuration)
+2. **Job Configuration**: `DRAFT` + `logist job config` commands → `DRAFT` (modified)
+3. **Job Activation**: `DRAFT` + `logist job activate` → `PENDING` (added to execution queue)
+4. **Worker Execution**: `PENDING` → `RUNNING` (worker) → `REVIEW_REQUIRED`
+5. **Supervisor Review**: `REVIEW_REQUIRED` → `REVIEWING` (supervisor) → `APPROVAL_REQUIRED` or `INTERVENTION_REQUIRED`
+6. **Human Decisions**: Final gates where humans make approval/rejection/termination decisions
 
 ### System Health Monitoring
 - **Automatic Recovery**: Stuck agents (marked RUNNING/REVIEWING but no active execution) auto-reset to safe pending states

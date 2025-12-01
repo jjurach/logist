@@ -85,10 +85,58 @@ Sets a job as the currently selected one, allowing you to run subsequent command
     logist job select my-other-job
     ```
 
-### `logist job list`
-Lists all active jobs registered in the `jobs_index.json`.
+### `logist job config [JOB_ID] --objective TEXT --details TEXT --acceptance TEXT --prompt TEXT --files FILELIST`
+Configures a DRAFT job with properties before activation. Only works on jobs in DRAFT state.
 
--   **Output**: A summary table showing the `Job ID`, `Status`, and a brief description for each job.
+-   **Arguments**:
+    -   `[JOB_ID]` (optional): The identifier of the job to configure. Defaults to currently selected job.
+-   **Options**:
+    -   `--objective TEXT`: Set the job objective/description
+    -   `--details TEXT`: Set specific requirements and implementation details
+    -   `--acceptance TEXT`: Set criteria for considering the job complete
+    -   `--prompt TEXT`: Set the main task prompt/description
+    -   `--files FILELIST`: Set relevant files (comma-separated list)
+-   **Requirement**: At least one option must be provided
+-   **State Restriction**: Job must be in DRAFT state to configure
+-   **Example**:
+    ```bash
+    # Configure a new job with all properties
+    logist job config --objective "Create email validator" --details "Include comprehensive error handling" --acceptance "Function passes all tests" --prompt "Implement email validation using RFC standards" --files "README.md,requirements.txt"
+
+    # Add just acceptance criteria
+    logist job config my-job --acceptance "All unit tests pass with 100% coverage"
+    ```
+
+### `logist job activate [JOB_ID] [--rank NUMBER]`
+Activates a DRAFT job for execution by transitioning it to PENDING state and adding it to the processing queue.
+
+-   **Arguments**:
+    -   `[JOB_ID]` (optional): The identifier of the job to activate. Defaults to currently selected job.
+-   **Options**:
+    -   `--rank NUMBER`: Queue position for execution order (0=front, default=append to end)
+-   **Effects**:
+    -   Changes job status from DRAFT to PENDING
+    -   Adds job to execution queue at specified position
+    -   Generates `prompt.md` from configuration data
+-   **State Restriction**: Job must be in DRAFT state to activate
+-   **Example**:
+    ```bash
+    # Activate current job with default queue position (end)
+    logist job activate
+
+    # Activate specific job at the front of the queue (highest priority)
+    logist job activate urgent-job --rank 0
+
+    # Activate job at position 2 in queue
+    logist job activate my-job --rank 2
+    ```
+
+### `logist job list`
+Lists all active jobs registered in the `jobs_index.json` along with their execution queue positions.
+
+-   **Output**: A summary table showing the `Job ID`, `Status`, `Queue Position`, and description for each job. Also displays execution queue summary.
+-   **Queue Positions**: Shows the relative position in the processing queue (e.g., `[0]` is the next job to run). Jobs not in the queue show "—" and are typically in DRAFT state awaiting activation.
+-   **Highlighting**: The job marked as "NEXT" in the queue summary will be highlighted with a special marker.
 -   **Example**:
     ```bash
     logist job list

@@ -7,6 +7,7 @@ digraph "Logist State Machine" {
     start [shape=point, label=""];
 
     // Core automaton states
+    DRAFT [label="DRAFT\n(configure properties)"];
     PENDING [label="PENDING\n(ready to run)"];
     RUNNING [label="RUNNING\n[agent executes]\n(current_agent)", shape=doublecircle];
     SUCCESS [label="SUCCESS\n(final acceptance)", shape=doublecircle, fillcolor=lightgreen, style=filled];
@@ -19,7 +20,8 @@ digraph "Logist State Machine" {
     APPROVAL_REQUIRED [label="APPROVAL_REQUIRED\n(requires final human approval\nbefore SUCCESS)", fillcolor=lightcyan, style=filled];
 
     // Transitions from start
-    start -> PENDING [label="job created/\ninitial"];
+    start -> DRAFT [label="job created/\ninitial"];
+    DRAFT -> PENDING [label="job activate\n(queue job for execution)"];
 
     // Worker execution cycle
     PENDING -> RUNNING [label="schedule/run\n[set worker]"];
@@ -69,6 +71,6 @@ digraph "Logist State Machine" {
     // Legend
     {
         rank=sink;
-        LEGEND [shape=box, label="Command Flow:\nPENDING → run Worker (RUNNING)\nREVIEW_REQUIRED → run Supervisor (REVIEWING)\nINTERVENTION_REQUIRED → human fixes\nAPPROVAL_REQUIRED → human approves\n\njob continue: Sets state ready, then use job run/step to execute\nRecovery: Stuck agents auto-reset to pending states"];
+        LEGEND [shape=box, label="Command Flow:\nDRAFT → job config (configure)\nDRAFT → job activate (PENDING)\nPENDING → job run Worker (RUNNING)\nREVIEW_REQUIRED → job review Supervisor (REVIEWING)\nINTERVENTION_REQUIRED → human fixes\nAPPROVAL_REQUIRED → human approves\n\njob continue: Sets state ready, then use job run/step to execute\nRecovery: Stuck agents auto-reset to pending states"];
     }
 }

@@ -1,0 +1,26 @@
+{
+  "type": "object",
+  "properties": {
+    "files": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "List of files relevant to the job"
+    },
+    "objective": {
+      "type": "string",
+      "description": "What the job aims to accomplish"
+    },
+    "details": {
+      "type": "string",
+      "description": "Specific requirements and implementation details"
+    },
+    "acceptance": {
+      "type": "string",
+      "description": "Criteria for considering the job complete"
+    },
+    "prompt": {
+      "type": "string",
+      "description": "Task description to use as prompt"
+    }
+  }
+}
