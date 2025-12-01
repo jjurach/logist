@@ -105,6 +105,36 @@ if ! echo "$ROLE_LIST_OUTPUT" | grep -q "Supervisor: Quality assurance and overs
 fi
 echo "✅ Role list command executed and roles verified"
 
+# Unit 11: role_inspect_command
+echo "📋 Unit 11: logist role inspect existing role"
+logist role inspect Worker > /tmp/worker_inspect_output.txt
+if ! grep -q '"name": "Worker"' /tmp/worker_inspect_output.txt; then
+    echo "❌ Worker role inspect did not show correct name"
+    exit 1
+fi
+if ! grep -q '"description": "Expert software development and implementation agent specializing in code generation, debugging, and technical problem-solving"' /tmp/worker_inspect_output.txt; then
+    echo "❌ Worker role inspect did not show correct description"
+    exit 1
+fi
+if ! grep -q '"llm_model": "grok-code-fast-1"' /tmp/worker_inspect_output.txt; then
+    echo "❌ Worker role inspect did not show correct LLM model"
+    exit 1
+fi
+if ! grep -q '"instructions":' /tmp/worker_inspect_output.txt; then
+    echo "❌ Worker role inspect did not show instructions field"
+    exit 1
+fi
+echo "✅ Role inspect command executed and Worker role verified"
+
+# Unit 12: role_inspect_command for non-existent role
+echo "📋 Unit 12: logist role inspect non-existent role"
+NONEXISTENT_INSPECT_OUTPUT=$(logist role inspect NonExistentRole 2>&1)
+if ! echo "$NONEXISTENT_INSPECT_OUTPUT" | grep -q "Role 'NonExistentRole' not found"; then
+    echo "❌ Role inspect should show proper error for non-existent role"
+    exit 1
+fi
+echo "✅ Role inspect command properly handles non-existent roles"
+
 # Unit 8: job_rerun_command
 echo "📋 Unit 8: logist job rerun"
 mkdir -p "$DEMO_DIR/rerun-test-job"
@@ -207,6 +237,8 @@ echo "✅ Job status command executed"
 echo "✅ Job selected successfully"
 echo "✅ Job workspace setup executed"
 echo "✅ Role list command executed and roles verified"
+echo "✅ Role inspect command executed and Worker role verified"
+echo "✅ Role inspect command properly handles non-existent roles"
 echo "✅ Job rerun command executed and scenarios verified"
 echo "✅ Job chat command state validation working"
 echo "✅ Job run command terminal state detection working"

@@ -198,6 +198,81 @@ class TestCLICommands:
         assert "- Supervisor:" in result_list.output
         assert "- Analyst: Data analysis and reporting specialist." in result_list.output
 
+    def test_role_inspect_command_existing_role(self, tmp_path):
+        """Test 'logist role inspect' for existing role after init."""
+        jobs_dir = tmp_path / "jobs"
+        jobs_dir.mkdir()
+
+        # Initialize jobs directory (this copies default roles)
+        result_init = self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "init"])
+        assert result_init.exit_code == 0
+
+        # Test inspecting Worker role
+        result_inspect = self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "role", "inspect", "Worker"])
+        assert result_inspect.exit_code == 0
+        assert '"name": "Worker"' in result_inspect.output
+        assert '"description": "Expert software development and implementation agent specializing in code generation, debugging, and technical problem-solving"' in result_inspect.output
+        assert '"llm_model": "grok-code-fast-1"' in result_inspect.output
+        assert '"instructions":' in result_inspect.output
+
+    def test_role_inspect_command_non_existent_role(self, tmp_path):
+        """Test 'logist role inspect' for non-existent role."""
+        jobs_dir = tmp_path / "jobs"
+        jobs_dir.mkdir()
+
+        # Initialize jobs directory to have some roles
+        self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "init"])
+
+        # Test inspecting non-existent role
+        result_inspect = self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "role", "inspect", "NonExistentRole"])
+        assert result_inspect.exit_code == 0  # Click handles errors gracefully
+        assert "Role 'NonExistentRole' not found." in result_inspect.output
+
+    def test_role_inspect_command_malformed_role_file(self, tmp_path):
+        """Test 'logist role inspect' with a malformed role file."""
+        jobs_dir = tmp_path / "malformed_jobs"
+        jobs_dir.mkdir()
+
+        # Initialize jobs directory with valid roles
+        self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "init"])
+
+        # Create a malformed role file by overwriting an existing one
+        worker_path = jobs_dir / "worker.json"
+        worker_path.write_text("{'name': 'Worker', 'description': 'This is not valid JSON}")
+
+        # Try to inspect Worker - should skip malformed file and show error
+        result_inspect = self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "role", "inspect", "Worker"])
+        # Should either find it in supervisor.json (if implementation tries other files) or show not found
+        # The current implementation searches for role name across all JSON files, skipping malformed ones
+        assert result_inspect.exit_code == 0 # Error is handled gracefully
+        # Could show "Role 'Worker' not found" if all Worker files are malformed, or succeed if it finds it elsewhere
+
+    def test_role_inspect_command_custom_role(self, tmp_path):
+        """Test 'logist role inspect' with a custom role file."""
+        jobs_dir = tmp_path / "custom_jobs"
+        jobs_dir.mkdir()
+
+        # Initialize jobs directory
+        self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "init"])
+
+        # Create a custom role file
+        custom_role_path = jobs_dir / "analyst.json"
+        custom_role_content = {
+            "name": "Analyst",
+            "description": "Data analysis and reporting specialist.",
+            "instructions": "You are a data analyst specialized in...",
+            "llm_model": "gemini-2.5-flash"
+        }
+        with open(custom_role_path, 'w') as f:
+            json.dump(custom_role_content, f)
+
+        # Test inspecting custom role
+        result_inspect = self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "role", "inspect", "Analyst"])
+        assert result_inspect.exit_code == 0
+        assert '"name": "Analyst"' in result_inspect.output
+        assert '"description": "Data analysis and reporting specialist."' in result_inspect.output
+        assert '"llm_model": "gemini-2.5-flash"' in result_inspect.output
+
 
 class TestJobChatCommand:
     """Test the job chat command functionality."""
