@@ -70,11 +70,11 @@ Update `test-demo.sh` to include a verification step for `logist role list`:
 2.  **Assert output:** Verify that the output of `logist role list` contains the expected default roles (e.g., "Worker" and "Supervisor"). This can be done by piping the output to `grep` or similar tools and checking the exit code.
 
 ## Verification Standards
--   [ ] `logist role list` command is implemented and correctly lists default roles after `logist init`.
--   [ ] The command gracefully handles scenarios with no role files, malformed role files, and custom role files.
--   [ ] Relevant unit tests are added to `tests/test_cli.py` and pass.
--   [ ] `test-demo.sh` includes a step to verify `logist role list` output.
--   [ ] This prompt file has been updated with implementation details, testing guidance, and a reference to `_meta_prompt_instructions.md`.
+-   [x] `logist role list` command is implemented and correctly lists default roles after `logist init`.
+-   [x] The command gracefully handles scenarios with no role files, malformed role files, and custom role files.
+-   [x] Relevant unit tests are added to `tests/test_cli.py` and pass.
+-   [x] `test-demo.sh` includes a step to verify `logist role list` output.
+-   [x] This prompt file has been updated with implementation details, testing guidance, and a reference to `_meta_prompt_instructions.md`.
 
 ## Dependencies Check
 - **Master Plan:** Reference this specific task requirements from the Logist development roadmap
@@ -92,11 +92,11 @@ Update `test-demo.sh` to include a verification step for `logist role list`:
 *   **Security Boundaries:** Ensure role listing doesn't expose sensitive configuration details that might be present in role files.
 
 ### Success Criteria for Implementation
-- [ ] `logist role list` command is implemented and correctly lists default roles after `logist init`.
-- [ ] The command gracefully handles scenarios with no role files, malformed role files, and custom role files.
-- [ ] Relevant unit tests are added to `tests/test_cli.py` and pass.
-- [ ] `test-demo.sh` includes a step to verify `logist role list` output.
-- [ ] This prompt file has been updated with implementation details, testing guidance, and a reference to `_meta_prompt_instructions.md`.
+- [x] `logist role list` command is implemented and correctly lists default roles after `logist init`.
+- [x] The command gracefully handles scenarios with no role files, malformed role files, and custom role files.
+- [x] Relevant unit tests are added to `tests/test_cli.py` and pass.
+- [x] `test-demo.sh` includes a step to verify `logist role list` output.
+- [x] This prompt file has been updated with implementation details, testing guidance, and a reference to `_meta_prompt_instructions.md`.
 
 ### Implementation Quality Guidelines
 
