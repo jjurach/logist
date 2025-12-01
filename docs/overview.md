@@ -183,8 +183,8 @@ cline config set openai.model grok-code-fast-1
 ### 2. Install Logist
 ```bash
 # Create virtual environment
-python3 -m venv logist-env
-source logist-env/bin/activate  # Linux/macOS
+python3 -m venv venv
+source venv/bin/activate  # Linux/macOS
 
 # Install from source
 git clone <repository-url>

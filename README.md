@@ -13,13 +13,13 @@ It's highly recommended to use a Python virtual environment to isolate dependenc
 
 ```bash
 # Create virtual environment
-python3 -m venv logist-env
+python3 -m venv venv
 
 # Activate virtual environment
 # On Linux/macOS:
-source logist-env/bin/activate
+source venv/bin/activate
 # On Windows:
-# logist-env\Scripts\activate
+# venv\Scripts\activate
 
 # Deactivate when done:
 # deactivate
@@ -30,13 +30,13 @@ source logist-env/bin/activate
 #### Option 1: Modern Python Packaging (Recommended)
 ```bash
 # Create virtual environment
-python3 -m venv logist-env
+python3 -m venv venv
 
 # Activate virtual environment
 # On Linux/macOS:
-source logist-env/bin/activate
+source venv/bin/activate
 # On Windows:
-# logist-env\Scripts\activate
+# venv\Scripts\activate
 ```
 
 #### Option 2: Traditional Requirements Files
