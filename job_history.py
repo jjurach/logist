@@ -15,7 +15,8 @@ def record_interaction(
     response: Dict[str, Any],
     execution_time_seconds: float,
     model_used: str,
-    cost_incurred: float
+    cost_incurred: float,
+    is_simulated: bool = False
 ) -> None:
     """
     Records a complete LLM interaction to the job history.
@@ -50,7 +51,8 @@ def record_interaction(
         "cost": cost_incurred,
         "execution_time_seconds": execution_time_seconds,
         "request": request,
-        "response": response
+        "response": response,
+        "is_simulated": is_simulated
     }
 
     # Append and save

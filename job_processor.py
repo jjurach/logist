@@ -301,6 +301,163 @@ def validate_evidence_files(evidence_files: List[str], workspace_dir: str) -> Li
     return validated_files
 
 
+def process_simulated_response(
+    job_dir: str,
+    job_id: str,
+    simulated_response: Dict[str, Any],
+    active_role: str,
+    dry_run: bool = False
+) -> Dict[str, Any]:
+    """
+    Processes a simulated LLM response through the post-LLM processing pipeline.
+
+    Args:
+        job_dir: The absolute path to the job's directory.
+        job_id: The ID of the job.
+        simulated_response: The simulated LLM response dictionary (already validated).
+        active_role: The active agent role for this processing.
+        dry_run: If True, parse and report what would happen without making changes.
+
+    Returns:
+        Dictionary with processing results and status.
+
+    Raises:
+        JobProcessorError: If processing fails.
+    """
+    import click
+    from datetime import datetime
+    from logist.job_state import load_job_manifest, transition_state, update_job_manifest
+    from logist.workspace_utils import perform_git_commit
+    from logist.job_history import record_interaction
+
+    results = {
+        "success": False,
+        "dry_run": dry_run,
+        "simulated_response": simulated_response,
+        "would_transition_to": None,
+        "would_commit_files": [],
+        "would_update_manifest": False,
+        "would_record_interaction": False,
+        "error": None
+    }
+
+    try:
+        # Load current manifest to get current status
+        manifest = load_job_manifest(job_dir)
+        current_status = manifest.get("status", "PENDING")
+
+        # Determine response action and other fields
+        response_action = simulated_response.get("action")
+        summary_for_supervisor = simulated_response.get("summary_for_supervisor", "")
+        evidence_files = simulated_response.get("evidence_files", [])
+
+        # Determine new status via state machine
+        new_status = transition_state(current_status, active_role, response_action)
+        results["would_transition_to"] = new_status
+
+        workspace_path = os.path.join(job_dir, "workspace")
+
+        # Validate evidence files (don't fail if they don't exist for simulated responses)
+        validated_evidence = []
+        if evidence_files:
+            try:
+                validated_evidence = validate_evidence_files(evidence_files, workspace_path)
+                click.echo(f"   📁 Validated evidence files: {', '.join(validated_evidence)}")
+            except JobProcessorError as e:
+                if not dry_run:
+                    click.secho(f"⚠️  Evidence file validation warning: {e}", fg="yellow")
+                # Continue processing even if evidence files aren't found
+
+        results["would_commit_files"] = evidence_files
+        results["would_update_manifest"] = True
+        results["would_record_interaction"] = True
+
+        if dry_run:
+            click.secho("   → Defensive setting detected: --dry-run", fg="yellow")
+            click.echo(f"   → Would: Transition job status from '{current_status}' to '{new_status}'")
+            click.echo(f"   → Would: Update job manifest with new status and history")
+            if evidence_files:
+                click.echo(f"   → Would: Commit evidence files to Git: {', '.join(evidence_files)}")
+            else:
+                click.echo("   → Would: No evidence files to commit")
+            click.echo("   → Would: Record simulated interaction in jobHistory.json")
+            click.secho("   ✅ Dry run completed - no changes made", fg="green")
+            results["success"] = True
+            return results
+
+        # Not dry-run: make actual changes
+
+        # Update job manifest (no cost/time increments for simulated responses)
+        history_entry = {
+            "role": active_role,
+            "action": response_action,
+            "summary": summary_for_supervisor,
+            "evidence_files": evidence_files,
+            "cline_task_id": None,  # No actual task for simulated responses
+            "event": "POSTSTEP_SIMULATION"  # Special marker for simulated poststep
+        }
+
+        update_job_manifest(
+            job_dir=job_dir,
+            new_status=new_status,
+            history_entry=history_entry
+            # Note: No cost_increment or time_increment for simulated responses
+        )
+        click.secho(f"   🔄 Job status updated to: {new_status}", fg="blue")
+
+        # Perform Git commit if there are evidence files
+        if evidence_files:
+            commit_result = perform_git_commit(
+                job_dir=job_dir,
+                evidence_files=evidence_files,
+                summary=f"feat: simulated job step - {summary_for_supervisor}"
+            )
+            if commit_result["success"]:
+                click.secho(f"   📝 Committed {len(commit_result.get('files_committed', []))} files", fg="green")
+            else:
+                click.secho(f"⚠️  Git commit failed: {commit_result.get('error', 'Unknown error')}", fg="yellow")
+        else:
+            click.echo("   📁 No evidence files to commit.")
+
+        # Record the simulated interaction in job history
+        # Create mock request/response for recording purposes
+        mock_request = {
+            "simulation": True,
+            "description": "Manually provided simulated LLM response for debugging/testing"
+        }
+
+        mock_response = {
+            **simulated_response,
+            "processed_at": datetime.now().isoformat(),
+            "metrics": {"cost_usd": 0.0, "duration_seconds": 0.0},  # No actual metrics for simulated
+            "cline_task_id": None,
+            "raw_cline_output": "Simulated response - no actual LLM call made"
+        }
+
+        record_interaction(
+            job_dir=job_dir,
+            request=mock_request,
+            response=mock_response,
+            execution_time_seconds=0.0,  # No actual execution time
+            model_used="simulated",
+            cost_incurred=0.0,  # No cost for simulated responses
+            is_simulated=True
+        )
+
+        click.secho("   📚 Simulated interaction recorded in jobHistory.json", fg="cyan")
+        click.secho(f"   ✅ Post-processed simulated response for job '{job_id}'", fg="green")
+
+        results["success"] = True
+        return results
+
+    except Exception as e:
+        error_msg = f"Error processing simulated response: {str(e)}"
+        click.secho(f"❌ {error_msg}", fg="red")
+        results["error"] = error_msg
+        results["success"] = False
+        return results
+
+
 def handle_execution_error(job_dir: str, job_id: str, error: Exception, raw_output: str = None) -> None:
     """
     Handles an execution error, updates job manifest to INTERVENTION_REQUIRED,

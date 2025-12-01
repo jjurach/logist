@@ -1,0 +1,27 @@
+[
+  {
+    "timestamp": "2025-11-30T20:45:57.102450",
+    "model": "simulated",
+    "cost": 0.0,
+    "execution_time_seconds": 0.0,
+    "request": {
+      "simulation": true,
+      "description": "Manually provided simulated LLM response for debugging/testing"
+    },
+    "response": {
+      "action": "COMPLETED",
+      "evidence_files": [
+        "example_output.txt"
+      ],
+      "summary_for_supervisor": "Successfully implemented the job poststep command",
+      "processed_at": "2025-11-30T20:45:57.102433",
+      "metrics": {
+        "cost_usd": 0.0,
+        "duration_seconds": 0.0
+      },
+      "cline_task_id": null,
+      "raw_cline_output": "Simulated response - no actual LLM call made"
+    },
+    "is_simulated": true
+  }
+]

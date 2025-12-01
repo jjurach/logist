@@ -1,0 +1,78 @@
+{
+  "job_id": "sample-implementation",
+  "description": "Sample job demonstrating logist workflow for implementing a Python utility function",
+  "status": "RUNNING",
+  "current_phase": "requirements_analysis",
+  "metrics": {
+    "cumulative_cost": 0,
+    "cumulative_time_seconds": 0
+  },
+  "history": [
+    {
+      "role": "Worker",
+      "action": "COMPLETED",
+      "summary": "Successfully implemented the job poststep command",
+      "evidence_files": [
+        "example_output.txt"
+      ],
+      "cline_task_id": null,
+      "event": "POSTSTEP_SIMULATION",
+      "timestamp": "2025-11-30T20:45:57.102182"
+    }
+  ],
+  "objective": "Create a well-tested Python function that validates email addresses with comprehensive error handling and documentation",
+  "roles": {
+    "worker": "Worker",
+    "supervisor": "Supervisor"
+  },
+  "cost_threshold": 2000,
+  "time_threshold_minutes": 30,
+  "git_integration": {
+    "baseline_branch": "main",
+    "job_branch": "job/email-validator-{job_id}",
+    "working_directory": "src"
+  },
+  "phases": [
+    {
+      "name": "requirements_analysis",
+      "description": "Analyze email validation requirements and edge cases",
+      "worker_instructions": "Research comprehensive email validation rules including RFC 5322 compliance, security considerations, and common edge cases. Document your findings and approach."
+    },
+    {
+      "name": "implementation",
+      "description": "Implement the email validation function with proper error handling",
+      "worker_instructions": "Create a robust email_validator.py module with the following: function signature, comprehensive docstring, type hints, input validation, regex patterns, and unit tests."
+    },
+    {
+      "name": "testing_and_refinement",
+      "description": "Test the implementation thoroughly and refine based on feedback",
+      "worker_instructions": "Run comprehensive tests covering normal cases, edge cases, security concerns, and performance. Fix any issues identified and improve the implementation."
+    }
+  ],
+  "success_criteria": [
+    "Function passes all RFC 5322 compliant email formats",
+    "Handles security-relevant edge cases (SQL injection, XSS)",
+    "Comprehensive docstring with examples",
+    "Full test coverage (>90%)",
+    "Performance optimized for reasonable input sizes",
+    "Type hints throughout the module"
+  ],
+  "fallback_strategies": {
+    "max_retries": 3,
+    "retry_on_failure": [
+      "requirements_analysis",
+      "testing_and_refinement"
+    ],
+    "alternative_approaches": [
+      "Use third-party library if regex approach proves too complex",
+      "Separate validation into multiple focused functions",
+      "Add caching for performance-critical use cases"
+    ]
+  },
+  "evidence_requirements": [
+    "email_validator.py - main implementation file",
+    "test_email_validator.py - comprehensive test suite",
+    "README.md - usage documentation and examples",
+    "performance_benchmark.py - performance test results"
+  ]
+}

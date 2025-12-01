@@ -871,6 +871,98 @@ def job_chat(ctx, job_id: str | None):
         click.secho(f"❌ Unexpected error during chat: {e}", fg="red")
 
 
+@job.command()
+@click.argument("job_id", required=False)
+@click.option(
+    "--response-file",
+    type=click.Path(exists=True),
+    help="Path to JSON file containing the simulated LLM response."
+)
+@click.option(
+    "--response-string",
+    help="JSON string containing the simulated LLM response."
+)
+@click.option(
+    "--role",
+    help="Specify the agent role (Worker/Supervisor). If not provided, uses current state."
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Parse input and show what would happen without making changes."
+)
+@click.pass_context
+def poststep(ctx, job_id: str | None, response_file: str, response_string: str, role: str, dry_run: bool):
+    """Process a simulated LLM response to advance job state."""
+    click.echo("📤 Executing 'logist job poststep'")
+
+    # Validate input options - exactly one of --response-file or --response-string must be provided
+    if not response_file and not response_string:
+        raise click.ClickException("Must provide either --response-file or --response-string")
+    if response_file and response_string:
+        raise click.ClickException("Cannot provide both --response-file and --response-string")
+
+    # Get job ID and validate
+    final_job_id = get_job_id(ctx, job_id)
+    if not final_job_id:
+        raise click.ClickException("❌ No job ID provided and no current job is selected.")
+
+    job_dir = get_job_dir(ctx, final_job_id)
+    if not job_dir:
+        raise click.ClickException(f"❌ Could not find job directory for '{final_job_id}'.")
+
+    try:
+        # Load and parse the simulated response
+        if response_file:
+            click.echo(f"   📄 Loading simulated response from file: {response_file}")
+            with open(response_file, 'r') as f:
+                simulated_response = json.load(f)
+        else:
+            click.echo("   📋 Processing simulated response from string input")
+            try:
+                simulated_response = json.loads(response_string)
+            except json.JSONDecodeError as e:
+                raise click.ClickException(f"Invalid JSON in response string: {e}")
+
+        click.echo(f"   ✅ Loaded simulated response with action: {simulated_response.get('action', 'unknown')}")
+
+        # Validate the response against schema
+        from logist.job_processor import validate_llm_response
+        validate_llm_response(simulated_response)
+        click.echo("   ✅ Response validated against schema")
+
+        # Determine active role
+        if role:
+            active_role = role
+            click.echo(f"   👤 Using specified role: {active_role}")
+        else:
+            # Get current state and role from job manifest
+            from logist.job_state import get_current_state_and_role, load_job_manifest
+            manifest = load_job_manifest(job_dir)
+            _, active_role = get_current_state_and_role(manifest)
+            click.echo(f"   👤 Using role from current job state: {active_role}")
+
+        # Process the simulated response
+        from logist.job_processor import process_simulated_response
+        results = process_simulated_response(
+            job_dir=job_dir,
+            job_id=final_job_id,
+            simulated_response=simulated_response,
+            active_role=active_role,
+            dry_run=dry_run
+        )
+
+        if results["success"]:
+            click.secho(f"   ✅ Successfully processed simulated response for job '{final_job_id}'", fg="green")
+        else:
+            click.secho(f"❌ Failed to process simulated response: {results.get('error', 'Unknown error')}", fg="red")
+            return
+
+    except (click.ClickException, Exception) as e:
+        click.secho(f"❌ Error during job poststep: {e}", fg="red")
+        raise
+
+
 @job.command(name="list")
 @click.pass_context
 def list_jobs(ctx):

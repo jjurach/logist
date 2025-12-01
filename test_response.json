@@ -1,0 +1,5 @@
+{
+  "action": "COMPLETED",
+  "evidence_files": ["example_output.txt"],
+  "summary_for_supervisor": "Successfully implemented the job poststep command"
+}
