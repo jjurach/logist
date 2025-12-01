@@ -58,10 +58,12 @@ class LogistEngine:
             # For now, execute one step (matching the pattern of other commands)
             # Future enhancement could implement continuous rerun until completion
             success = self.step_job(ctx, job_id, job_dir, dry_run=False)
-            if success:
-                click.secho(f"   ✅ Rerun initiated successfully", fg="green")
-            else:
-                click.secho(f"   ❌ Rerun step failed", fg="red")
+
+            # Always report success for the rerun command itself, even if the step fails
+            # The rerun state reset was successful, and future runs/steps can be attempted
+            click.secho(f"   ✅ Rerun initiated successfully", fg="green")
+            if not success:
+                click.secho(f"   ⚠️  Initial step failed - use 'logist job step' to retry", fg="yellow")
 
         except Exception as e:
             click.secho(f"❌ Error during job rerun preparation: {e}", fg="red")
