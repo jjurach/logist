@@ -94,3 +94,34 @@ feature and to clean up locally modified files into one or more git commits.
 - units tests, or integration tests, or demo script demonstrates
   that attached files affect the llm computation
 
+<deliverables>
+
+✅ All acceptance criteria satisfied:
+- ✅ Move system.md from weird directory structure to logist/schemas/roles/
+- ✅ Enhance workspace setup to clone git HEAD and copy attachments
+- ✅ Implement file discovery system scanning prompt.md for references
+- ✅ Add latest-outcome.json saving and propagation between steps
+- ✅ Create role-specific outcome interpretation instructions
+- ✅ Implement job preview command showing detailed file discovery
+- ✅ Create test scenario with cat-alive.md/cat-dead.md attachment verification
+
+Files Created/Modified:
+- logist/schemas/roles/system.md (moved from logist/logist/schemas/roles/)
+- logist/logist/workspace_utils.py (enhanced with attachment preparation)
+- logist/logist/job_processor.py (enhanced with outcome handling)
+- logist/logist/cli.py (added preview command and enhanced step_job)
+- test-job-demo/job_dir/ (complete test scenario with attachments)
+
+Implementation Notes:
+- Workspace preparation now clones git HEAD rather than using branches
+- Attachment copying preserves relative directory structure
+- File discovery uses pkg_resources for reliable schema file location
+- Outcome propagation provides continuity between worker/supervisor steps
+- Preview command shows all discovered files and preparation details
+
+Testing:
+- Test scenario created with conditional logic based on attachment content
+- Attachment-dependent responses verify file discovery is working
+- Preview command shows complete context preparation pipeline
+
+Completed: December 1, 2025
