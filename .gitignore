@@ -150,7 +150,7 @@ Thumbs.db
 *.log
 logs/
 
-# Job-specific artifacts (project-logist specific)
+# Job-specific artifacts (logist specific)
 jobs/
 job-data/
 *.manifest

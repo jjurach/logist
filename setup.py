@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-"""Setup script for project-logist."""
+"""Setup script for logist."""
 
 from setuptools import setup
 

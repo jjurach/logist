@@ -42,7 +42,7 @@ source venv/bin/activate
 #### Option 2: Traditional Requirements Files
 ```bash
 git clone <repository-url>
-cd project-logist
+cd logist
 
 # Install runtime dependencies only
 pip install -r requirements.txt
@@ -53,7 +53,7 @@ pip install -r requirements-dev.txt
 
 ### For Users
 ```bash
-pip install project-logist
+pip install logist
 ```
 
 ## 📋 Prerequisites
@@ -128,7 +128,7 @@ Cline must be configured with access to your preferred LLM providers:
 
 #### 1. Install Test Dependencies
 ```bash
-cd project-logist
+cd logist
 pip install -e .[dev]
 ```
 

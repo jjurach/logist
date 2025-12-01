@@ -1,4 +1,4 @@
-# project-logist
+# logist
 # A sophisticated agent orchestration tool with DAG workflows and state machine
 # execution
 
