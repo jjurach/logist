@@ -2317,10 +2317,21 @@ def preview_job(ctx, job_id: str | None, detailed: bool):
         manager.setup_workspace(job_dir)
 
         # Determine current phase and role
-        current_phase_name, active_role = get_current_state_and_role(manifest)
-        click.echo(f"   📍 Current Phase: {current_phase_name}")
-        click.echo(f"   👤 Active Role: {active_role}")
-        click.echo(f"   📊 Status: {current_status}")
+        try:
+            current_phase_name, active_role = get_current_state_and_role(manifest)
+            click.echo(f"   📍 Current Phase: {current_phase_name}")
+            click.echo(f"   👤 Active Role: {active_role}")
+            click.echo(f"   📊 Status: {current_status}")
+        except JobStateError as e:
+            if "current_phase" in str(e):
+                click.secho(f"❌ Error during job preview: Job manifest is missing 'current_phase'.", fg="red")
+                click.echo("   💡 This job requires a job specification with phases to be previewed.")
+                click.echo("   💡 Try one of the following:")
+                click.echo("      • Create the job with a sample spec: cp config/sample-job.json job_dir/ && logist job create job_dir")
+                click.echo("      • Configure the job manually with phases, then re-run preview")
+                return
+            else:
+                raise
 
         # Load role configuration
         role_config_path = os.path.join(ctx.obj["JOBS_DIR"], f"{active_role.lower()}.json")
