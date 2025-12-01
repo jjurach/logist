@@ -2451,6 +2451,11 @@ def activate_job(ctx, job_id: str | None, rank: int):
             manifest["phases"] = phases  # Update manifest with default phases
             click.echo(f"   📍 Initialized job with default single phase")
 
+            # Save the updated manifest with phases before updating status/phase
+            manifest_path = os.path.join(job_dir, "job_manifest.json")
+            with open(manifest_path, 'w') as f:
+                json.dump(manifest, f, indent=2)
+
         # Set current_phase to first phase if not already set
         if manifest.get("current_phase") is None:
             current_phase = phases[0]["name"]
@@ -2458,7 +2463,7 @@ def activate_job(ctx, job_id: str | None, rank: int):
         else:
             current_phase = manifest["current_phase"]  # Keep existing if already set
 
-        # Update job manifest
+        # Update job manifest (this will only update status and phase now)
         update_job_manifest(job_dir=job_dir, new_status=new_status, new_phase=current_phase)
 
         # Load/update jobs index to add job to queue
