@@ -825,60 +825,38 @@ role_manager = RoleManager()
 def init_command(jobs_dir: str) -> bool:
     """Initialize the jobs directory with default configurations."""
     try:
+        # Import the resource loading utilities
+        import json
+        try:
+            from importlib import resources as importlib_resources
+        except ImportError:
+            import importlib_resources
+
         os.makedirs(jobs_dir, exist_ok=True)
-
-        # Find schemas directory using multiple fallbacks (pkg_resources fails)
-        schemas_dir = None
-
-        # Try hardcoded development location first
-        dev_alt_schemas_dir = "/home/phaedrus/AiSpace/logist/schemas/roles"
-        if os.path.exists(dev_alt_schemas_dir):
-            schemas_dir = dev_alt_schemas_dir
-        else:
-            # Fallback to script-relative path for other development setups
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            dev_schemas_dir = os.path.join(script_dir, "..", "..", "schemas", "roles")
-            if os.path.exists(dev_schemas_dir):
-                schemas_dir = dev_schemas_dir
-            else:
-                # Try pkg_resources (may give wrong path)
-                try:
-                    import pkg_resources
-                    schemas_dir = pkg_resources.resource_filename('logist', 'schemas/roles')
-                except ImportError:
-                    schemas_dir = None
-                else:
-                    # Last resort if pkg_resources finds something wrong - use the correct path anyway
-                    if schemas_dir and not os.path.exists(os.path.join(schemas_dir, "worker.json")):
-                        # Override pkg_resources with correct development path
-                        schemas_dir = "/home/phaedrus/AiSpace/logist/schemas/roles"
 
         roles_to_copy = ["worker.json", "supervisor.json"]
         schema_copied_count = 0
 
         for role_file in roles_to_copy:
-            schema_path = os.path.join(schemas_dir, role_file) if schemas_dir else None
-            dest_path = os.path.join(jobs_dir, role_file)
+            # Load the schema from package resources
+            try:
+                resource_file = importlib_resources.files('logist') / 'schemas' / 'roles' / role_file
+                with resource_file.open('r', encoding='utf-8') as f:
+                    role_data = json.load(f)
 
-            if schemas_dir and os.path.exists(schema_path):
-                try:
-                    shutil.copy2(schema_path, dest_path)
-                    schema_copied_count += 1
-                except (OSError, IOError) as e:
-                    click.secho(f"⚠️  Warning: Failed to copy '{role_file}': {e}", fg="yellow")
-            else:
-                click.secho(f"⚠️  Warning: Schema file '{role_file}' not found at '{schemas_dir or 'unknown path'}'", fg="yellow")
+                # Write to jobs directory
+                dest_path = os.path.join(jobs_dir, role_file)
+                with open(dest_path, 'w', encoding='utf-8') as f:
+                    json.dump(role_data, f, indent=2)
 
-        # Update success message only if files were actually copied
-        if schema_copied_count > 0:
-            message_lines = [
-                f"   📎 Copied {schema_copied_count} schema file(s)"
-            ]
-        else:
-            message_lines = [
-                f"   ⚠️  No schema files could be copied"
-            ]
+                schema_copied_count += 1
 
+            except (FileNotFoundError, json.JSONDecodeError, IOError) as e:
+                click.secho(f"⚠️  Warning: Failed to copy schema '{role_file}': {e}", fg="yellow")
+            except Exception as e:
+                click.secho(f"⚠️  Warning: Unexpected error copying '{role_file}': {e}", fg="yellow")
+
+        # Create jobs index
         jobs_index_path = os.path.join(jobs_dir, "jobs_index.json")
         jobs_index_data = {
             "current_job_id": None,
@@ -888,8 +866,10 @@ def init_command(jobs_dir: str) -> bool:
         with open(jobs_index_path, 'w') as f:
             json.dump(jobs_index_data, f, indent=2)
 
+        click.echo(f"   📎 Copied {schema_copied_count} schema file(s)")
+
         return True
-    except (OSError, IOError) as e:
+    except Exception as e:
         click.secho(f"❌ Error during initialization: {e}", fg="red")
         return False
 

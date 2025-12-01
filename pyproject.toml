@@ -29,6 +29,7 @@ classifiers = [
 ]
 dependencies = [
     "click>=8.0.0",
+    "importlib-resources>=1.4.0; python_version<'3.9'",
     "jsonschema>=4.0.0",
     "pyyaml>=6.0",
     "rich>=13.0.0",
@@ -50,6 +51,9 @@ zip-safe = false
 
 [tool.setuptools.packages.find]
 where = ["."]
+
+[tool.setuptools.package-data]
+logist = ["schemas/roles/*.json"]
 
 [tool.ruff]
 # Exclude common directories
