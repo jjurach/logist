@@ -847,6 +847,16 @@ def init_command(jobs_dir: str) -> bool:
                 fallback_schemas_dir = "/home/phaedrus/AiSpace/logist/schemas/roles"
                 if os.path.exists(fallback_schemas_dir):
                     schemas_dir = fallback_schemas_dir
+                else:
+                    # Try one more level up for different package structures
+                    fallback_schemas_dir = "/home/phaedrus/AiSpace/logist/schemas/roles"
+                    if os.path.exists(fallback_schemas_dir):
+                        schemas_dir = fallback_schemas_dir
+                    else:
+                        # Last resort - look in current directory relative to script
+                        final_fallback = os.path.join(script_dir, "..", "..", "..", "schemas", "roles")
+                        if os.path.exists(final_fallback):
+                            schemas_dir = final_fallback
 
         roles_to_copy = ["worker.json", "supervisor.json"]
         for role_file in roles_to_copy:
