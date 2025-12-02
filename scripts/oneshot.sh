@@ -28,7 +28,7 @@ PROJECT_ROOT=$(cd "$scriptdir/../.."; pwd -P)
 AGENTS_MD="$PROJECT_ROOT/AGENTS.md"
 
 # Verify meta-prompt file exists
-META_PROMPT_FILE="$scriptdir/../docs/prompts/_meta_prompt_instructions.md"
+META_PROMPT_FILE="$scriptdir/../docs/prompts/_prompt_instructions.md"
 if [[ ! -f "$META_PROMPT_FILE" ]]; then
     echo "Warning: Meta-prompt file '$META_PROMPT_FILE' not found"
     if [[ -f "$AGENTS_MD" ]]; then

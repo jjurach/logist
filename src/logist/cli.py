@@ -2417,6 +2417,33 @@ def preview_job(ctx, job_id: str | None, detailed: bool):
             if outcome_instructions and active_role.lower() == context.get('role_name', '').lower():
                 click.echo("   💬 Role-specific outcome instructions provided")
 
+        # Write to jobHistory.json for preview operation logging with debug display
+        from datetime import datetime
+        job_history_entry = {
+            "timestamp": datetime.now().isoformat(),
+            "model": "preview-only",
+            "cost": 0.0,
+            "execution_time_seconds": 0.0,
+            "request": {
+                "operation": "preview",
+                "job_id": final_job_id,
+                "phase": context.get('current_phase', 'unknown'),
+                "role": context.get('role_name', 'unknown'),
+                "detailed": detailed
+            },
+            "response": {
+                "action": "PREVIEW_COMPLETED",
+                "summary_for_supervisor": f"Preview completed for phase '{current_phase_name}', role '{active_role}'",
+                "evidence_files": [],
+                "metrics": {}
+            }
+        }
+        self._write_job_history_entry(job_dir, job_history_entry)
+
+        # Debug verbose logging
+        debug_mode = ctx.obj.get("DEBUG", False)
+        self._show_debug_history_info(debug_mode, "preview", final_job_id, job_history_entry)
+
         click.secho("   ✅ Preview completed successfully", fg="green")
 
     except Exception as e:
