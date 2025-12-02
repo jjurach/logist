@@ -27,6 +27,84 @@ from logist.metrics_utils import check_thresholds_before_execution, calculate_de
 class LogistEngine:
     """Orchestration engine for Logist jobs."""
 
+    def _write_job_history_entry(self, job_dir: str, entry: dict) -> None:
+        """Write a job history entry to jobHistory.json."""
+        job_history_path = os.path.join(job_dir, "jobHistory.json")
+
+        # Load existing history or create empty array
+        if os.path.exists(job_history_path):
+            try:
+                with open(job_history_path, 'r') as f:
+                    history = json.load(f)
+                    if not isinstance(history, list):
+                        history = []
+            except (json.JSONDecodeError, OSError):
+                history = []
+        else:
+            history = []
+
+        # Append new entry
+        history.append(entry)
+
+        # Write back to file
+        try:
+            with open(job_history_path, 'w') as f:
+                json.dump(history, f, indent=2)
+        except OSError as e:
+            click.secho(f"⚠️  Failed to write job history entry: {e}", fg="yellow")
+
+    def _show_debug_history_info(self, debug_mode: bool, operation: str, job_id: str, entry: dict) -> None:
+        """Display detailed debug information when writing to jobHistory.json."""
+        if not debug_mode:
+            return
+
+        click.echo(f"   📝 [DEBUG] Writing to jobHistory.json for {operation} operation:")
+        click.echo(f"      📅 Timestamp: {entry.get('timestamp', 'unknown')}")
+        click.echo(f"      🧠 Model: {entry.get('model', 'unknown')}")
+        click.echo(f"      💰 Cost: ${entry.get('cost', 0):.4f}")
+        click.echo(f"      ⏱️  Execution Time: {entry.get('execution_time_seconds', 0):.2f}s")
+
+        # Show metrics if available
+        metrics = entry.get("response", {}).get("metrics", {})
+        if metrics:
+            if "cost_usd" in metrics:
+                click.echo(f"      💸 LLM Cost: ${metrics['cost_usd']:.4f}")
+            if "token_input" in metrics:
+                click.echo(f"      📥 Input Tokens: {metrics['token_input']:,}")
+            if "token_output" in metrics:
+                click.echo(f"      📤 Output Tokens: {metrics['token_output']:,}")
+            if "token_cache_read" in metrics and metrics['token_cache_read'] > 0:
+                click.echo(f"      📚 Cached Read Tokens: {metrics['token_cache_read']:,}")
+            if "cache_hit" in metrics:
+                click.echo(f"      🎯 Cache Hit: {'Yes' if metrics['cache_hit'] else 'No'}")
+            if "ttft_seconds" in metrics and metrics['ttft_seconds'] is not None:
+                click.echo(f"      ⏱️  TTFT: {metrics['ttft_seconds']:.2f}s")
+            if "throughput_tokens_per_second" in metrics and metrics['throughput_tokens_per_second'] is not None:
+                click.echo(f"      ⚡ Throughput: {metrics['throughput_tokens_per_second']:.2f} tokens/s")
+            total_tokens = metrics.get("token_input", 0) + metrics.get("token_output", 0) + metrics.get("token_cache_read", 0)
+            if total_tokens > 0:
+                click.echo(f"      🔢 Total Tokens (Input+Output+Cached): {total_tokens:,}")
+
+        request_info = entry.get("request", {})
+        if request_info.get("job_id"):
+            click.echo(f"      🎯 Job ID: {request_info['job_id']}")
+        if request_info.get("phase"):
+            click.echo(f"      📍 Phase: {request_info['phase']}")
+        if request_info.get("role"):
+            click.echo(f"      👤 Role: {request_info['role']}")
+
+        response_info = entry.get("response", {})
+        if response_info.get("action"):
+            click.echo(f"      🎬 Action: {response_info['action']}")
+
+        evidence_files = response_info.get("evidence_files", [])
+        if evidence_files:
+            click.echo(f"      📁 Evidence Files: {len(evidence_files)}")
+            for i, evidence in enumerate(evidence_files[:3]):  # Show first 3
+                click.echo(f"         • {evidence}")
+            if len(evidence_files) > 3:
+                click.echo(f"         ... and {len(evidence_files) - 3} more")
+
     def rerun_job(self, ctx: click.Context, job_id: str, job_dir: str, start_step: int | None = None) -> None:
         """Re-execute a job, optionally starting from a specific phase."""
         manager.setup_workspace(job_dir) # Ensure workspace is ready
@@ -185,6 +263,32 @@ class LogistEngine:
             click.echo(f"   📝 Summary for Supervisor: {processed_response.get('summary_for_supervisor', 'N/A')}")
             click.echo(f"   ⏱️  Execution time: {execution_time:.2f} seconds")
 
+            # Debug: Write to jobHistory.json for step operation
+            debug_mode = ctx.obj.get("DEBUG", False)
+            if debug_mode:
+                from datetime import datetime
+                job_history_entry = {
+                    "timestamp": datetime.now().isoformat(),
+                    "model": model,
+                    "cost": processed_response.get("metrics", {}).get("cost_usd", 0.0),
+                    "execution_time_seconds": execution_time,
+                    "request": {
+                        "operation": "step",
+                        "job_id": job_id,
+                        "phase": current_phase_name,
+                        "role": active_role,
+                        "dry_run": dry_run
+                    },
+                    "response": {
+                        "action": response_action,
+                        "summary_for_supervisor": processed_response.get("summary_for_supervisor", ""),
+                        "evidence_files": evidence_files,
+                        "metrics": processed_response.get("metrics", {})
+                    }
+                }
+                self._write_job_history_entry(job_dir, job_history_entry)
+                self._show_debug_history_info(debug_mode, "step", job_id, job_history_entry)
+
             # 9. Save outcome to latest-outcome.json
             outcome_save = save_latest_outcome(job_dir, processed_response)
             if outcome_save["success"]:
@@ -207,7 +311,7 @@ class LogistEngine:
                 "role": active_role,
                 "action": response_action,
                 "summary": processed_response.get("summary_for_supervisor"),
-                "metrics": processed_response.get("metrics", {}),
+                "metrics": processed_response.get("metrics", {}), # Includes new cached token metrics
                 "cline_task_id": processed_response.get("cline_task_id"),
                 "new_status": new_status,
                 "evidence_files": evidence_files, # Store reported evidence files
@@ -268,6 +372,30 @@ class LogistEngine:
         click.echo("🎯 [LOGIST] Starting continuous job execution")
         click.echo(f"   📍 Job: {job_id}")
         click.echo(f"   📁 Directory: {job_dir}")
+
+        # Debug: Write to jobHistory.json for run command start
+        debug_mode = ctx.obj.get("DEBUG", False)
+        if debug_mode:
+            from datetime import datetime
+            job_history_entry = {
+                "timestamp": datetime.now().isoformat(),
+                "model": "run-command",
+                "cost": 0.0,
+                "execution_time_seconds": 0.0,
+                "request": {
+                    "operation": "run",
+                    "job_id": job_id,
+                    "description": "Starting continuous job execution loop"
+                },
+                "response": {
+                    "action": "RUN_STARTED",
+                    "summary_for_supervisor": f"Continuous execution started for job '{job_id}'",
+                    "evidence_files": [],
+                    "metrics": {}
+                }
+            }
+            self._write_job_history_entry(job_dir, job_history_entry)
+            self._show_debug_history_info(debug_mode, "run-start", job_id, job_history_entry)
 
         try:
             # Load initial job manifest to check current status
@@ -909,11 +1037,17 @@ def get_job_dir(ctx, job_id: str) -> str | None:
     help="The root directory for jobs and the jobs_index.json file.",
     type=click.Path(),
 )
+@click.option(
+    "--debug",
+    is_flag=True,
+    help="Enable debug output for detailed operation logging.",
+)
 @click.pass_context
-def main(ctx, jobs_dir):
+def main(ctx, jobs_dir, debug):
     """Logist - Sophisticated Agent Orchestration."""
     ctx.ensure_object(dict)
     ctx.obj["JOBS_DIR"] = jobs_dir
+    ctx.obj["DEBUG"] = debug
     click.echo(f"⚓ Welcome to Logist - Using jobs directory: {jobs_dir}")
 
 
@@ -1310,7 +1444,11 @@ def status(ctx, job_id: str | None, output_json: bool, recovery: bool):
 
                     # Token usage summary if available
                     if metrics_snapshot.total_tokens > 0:
-                        click.echo(f"   🧠 Tokens: {metrics_snapshot.total_tokens:,} total")
+                        click.echo(f"   🧠 Total Tokens: {metrics_snapshot.total_tokens:,}")
+                        if metrics_snapshot.total_tokens_cache_read > 0:
+                            click.echo(f"      📚 Cached Read Tokens: {metrics_snapshot.total_tokens_cache_read:,}")
+                        if metrics_snapshot.total_cache_hits > 0:
+                            click.echo(f"      🎯 Cache Hits: {metrics_snapshot.total_cache_hits:,}")
 
                     # Steps summary
                     click.echo(f"   📈 Steps: {metrics_snapshot.step_count}")
@@ -1396,8 +1534,8 @@ def metrics(ctx, job_id: str | None, export_csv: str, projections: bool, remaini
             # Per-step breakdown
             click.echo("\n📋 PER-STEP BREAKDOWN:")
             if history:
-                click.echo("   Step | Role      | Action    | Cost     | Time (s) | Tokens")
-                click.echo("   ---- | --------- | --------- | -------- | -------- | ------")
+                click.echo("   Step | Role      | Action    | Cost     | Time (s) | In Tokens | Out Tokens | Cached Read | Cache Hit")
+                click.echo("   ---- | --------- | --------- | -------- | -------- | --------- | ---------- | ----------- | ---------")
 
                 for i, entry in enumerate(history):
                     role = entry.get("role", "Unknown")[:9]
@@ -1405,9 +1543,12 @@ def metrics(ctx, job_id: str | None, export_csv: str, projections: bool, remaini
                     metrics_entry = entry.get("metrics", {})
                     cost = metrics_entry.get("cost_usd", 0.0)
                     time_seconds = metrics_entry.get("duration_seconds", 0.0)
-                    tokens = metrics_entry.get("token_input", 0) + metrics_entry.get("token_output", 0)
+                    token_input = metrics_entry.get("token_input", 0)
+                    token_output = metrics_entry.get("token_output", 0)
+                    token_cache_read = metrics_entry.get("token_cache_read", 0)
+                    cache_hit = "Yes" if metrics_entry.get("cache_hit", False) else "No"
 
-                    click.echo(f"   {i:4d} | {role:<9} | {action:<9} | ${cost:>7.4f} | {time_seconds:>8.1f} | {tokens:>6,d}")
+                    click.echo(f"   {i:4d} | {role:<9} | {action:<9} | ${cost:>7.4f} | {time_seconds:>8.1f} | {token_input:>9,d} | {token_output:>10,d} | {token_cache_read:>11,d} | {cache_hit:<9}")
             else:
                 click.echo("   No execution history available.")
 

@@ -28,6 +28,8 @@ class MetricsSnapshot:
     cumulative_cost: float
     cumulative_time_seconds: float
     total_tokens: int
+    total_tokens_cache_read: int
+    total_cache_hits: int
     step_count: int
     cost_threshold: float
     time_threshold_minutes: float
@@ -58,6 +60,8 @@ def extract_metrics_from_history(history: List[Dict[str, Any]]) -> Dict[str, Any
     total_tokens = 0
     completed_steps = 0
     failed_steps = 0
+    total_tokens_cache_read = 0
+    total_cache_hits = 0
 
     for entry in history:
         # Count successful steps (those with action COMPLETED)
@@ -71,12 +75,17 @@ def extract_metrics_from_history(history: List[Dict[str, Any]]) -> Dict[str, Any
         if metrics:
             total_tokens_input += metrics.get("token_input", 0)
             total_tokens_output += metrics.get("token_output", 0)
+            total_tokens_cache_read += metrics.get("token_cache_read", 0)
+            if metrics.get("cache_hit", False):
+                total_cache_hits += 1
 
-    total_tokens = total_tokens_input + total_tokens_output
+    total_tokens = total_tokens_input + total_tokens_output + total_tokens_cache_read
 
     return {
         "total_tokens_input": total_tokens_input,
         "total_tokens_output": total_tokens_output,
+        "total_tokens_cache_read": total_tokens_cache_read,
+        "total_cache_hits": total_cache_hits,
         "total_tokens": total_tokens,
         "completed_steps": completed_steps,
         "failed_steps": failed_steps,
@@ -145,6 +154,8 @@ def calculate_detailed_metrics(manifest: Dict[str, Any]) -> MetricsSnapshot:
     # Extract token and step metrics from history
     history_metrics = extract_metrics_from_history(history)
     total_tokens = history_metrics["total_tokens"]
+    total_tokens_cache_read = history_metrics["total_tokens_cache_read"]
+    total_cache_hits = history_metrics["total_cache_hits"]
     step_count = history_metrics["total_steps"]
 
     # Calculate percentages
@@ -174,6 +185,8 @@ def calculate_detailed_metrics(manifest: Dict[str, Any]) -> MetricsSnapshot:
         cumulative_cost=cumulative_cost,
         cumulative_time_seconds=cumulative_time_seconds,
         total_tokens=total_tokens,
+        total_tokens_cache_read=total_tokens_cache_read,
+        total_cache_hits=total_cache_hits,
         step_count=step_count,
         cost_threshold=thresholds.cost_threshold_usd,
         time_threshold_minutes=thresholds.time_threshold_minutes,
@@ -314,7 +327,8 @@ def export_metrics_to_csv(job_dir: str, output_file: Optional[str] = None) -> st
     with open(output_file, 'w', newline='') as csvfile:
         fieldnames = [
             'timestamp', 'step_number', 'role', 'action', 'summary',
-            'cost_usd', 'time_seconds', 'token_input', 'token_output', 'total_tokens',
+            'cost_usd', 'time_seconds', 'token_input', 'token_output', 'token_cache_read', 'cache_hit',
+            'ttft_seconds', 'throughput_tokens_per_second', 'total_tokens',
             'cline_task_id', 'status_after'
         ]
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
@@ -332,7 +346,11 @@ def export_metrics_to_csv(job_dir: str, output_file: Optional[str] = None) -> st
                 'time_seconds': metrics.get('duration_seconds', 0.0),
                 'token_input': metrics.get('token_input', 0),
                 'token_output': metrics.get('token_output', 0),
-                'total_tokens': metrics.get('token_input', 0) + metrics.get('token_output', 0),
+                'token_cache_read': metrics.get('token_cache_read', 0),
+                'cache_hit': 'Yes' if metrics.get('cache_hit', False) else 'No',
+                'ttft_seconds': metrics.get('ttft_seconds', ''),
+                'throughput_tokens_per_second': metrics.get('throughput_tokens_per_second', ''),
+                'total_tokens': metrics.get('token_input', 0) + metrics.get('token_output', 0) + metrics.get('token_cache_read', 0),
                 'cline_task_id': entry.get('cline_task_id', ''),
                 'status_after': entry.get('new_status', '')
             })

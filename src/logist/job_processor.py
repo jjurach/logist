@@ -262,8 +262,13 @@ def execute_llm_with_cline(
         metrics = {
             "token_input": metadata.get("metrics", {}).get("token_counts", {}).get("input", 0),
             "token_output": metadata.get("metrics", {}).get("token_counts", {}).get("output", 0),
+            "token_cache_read": metadata.get("metrics", {}).get("token_counts", {}).get("cacheRead", 0),
+            "token_cache_write": metadata.get("metrics", {}).get("token_counts", {}).get("cacheWrite", 0),
+            "cache_hit": metadata.get("metrics", {}).get("cache_hit", False),
             "cost_usd": metadata.get("metrics", {}).get("cost_usd", 0.0),
-            "duration_seconds": metadata.get("duration_seconds", execution_time)
+            "duration_seconds": metadata.get("duration_seconds", execution_time),
+            "ttft_seconds": metadata.get("metrics", {}).get("ttft_seconds"),
+            "throughput_tokens_per_second": metadata.get("metrics", {}).get("throughput_tokens_per_second"),
         }
 
         # Combine LLM response with metrics
