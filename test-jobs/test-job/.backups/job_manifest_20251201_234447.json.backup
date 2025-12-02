@@ -1,0 +1,17 @@
+{
+  "job_id": "test-job",
+  "description": "Job test-job",
+  "status": "DRAFT",
+  "current_phase": null,
+  "metrics": {
+    "cumulative_cost": 0,
+    "cumulative_time_seconds": 0
+  },
+  "history": [],
+  "phases": [
+    {
+      "name": "default",
+      "description": "Default single phase"
+    }
+  ]
+}

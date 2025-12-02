@@ -220,14 +220,7 @@ class LogistEngine:
             current_phase_name, active_role = get_current_state_and_role(manifest)
             click.echo(f"   → Current Phase: {current_phase_name}, Active Role: {active_role}")
 
-            # 4. Load role configuration
-            role_config_path = os.path.join(ctx.obj["JOBS_DIR"], f"{active_role.lower()}.json")
-            if not os.path.exists(role_config_path):
-                raise JobContextError(f"Role configuration not found for '{active_role}' at {role_config_path}")
-            with open(role_config_path, 'r') as f:
-                role_config = json.load(f)
-
-            # 5. Prepare workspace with attachments and file discovery
+            # 4. Prepare workspace with attachments and file discovery
             workspace_dir = os.path.join(job_dir, "workspace")
             prep_result = workspace_utils.prepare_workspace_attachments(job_dir, workspace_dir)
             if prep_result["success"]:
@@ -244,7 +237,7 @@ class LogistEngine:
                 click.echo(f"   🏆 Prepared outcome data from previous {len(outcome_prep['attachments_added'])} steps")
 
             # 7. Assemble job context with enhanced preparation
-            context = assemble_job_context(job_dir, manifest, role_config)
+            context = assemble_job_context(job_dir, manifest, ctx.obj["JOBS_DIR"], active_role)
             context = enhance_context_with_previous_outcome(context, job_dir)
 
             # 8. Execute LLM with Cline using discovered file arguments
@@ -253,8 +246,7 @@ class LogistEngine:
             processed_response, execution_time = execute_llm_with_cline(
                 context=context,
                 workspace_dir=workspace_dir,
-                file_arguments=file_arguments,
-                instruction_files=[role_config_path] # Pass role config as instruction
+                file_arguments=file_arguments
             )
 
             response_action = processed_response.get("action")
@@ -490,21 +482,14 @@ class LogistEngine:
             active_role = target_phase.get("active_agent", "Worker")  # Default to Worker
             click.echo(f"   → Active Role: {active_role}")
 
-            # 3. Load role configuration
-            role_config_path = os.path.join(ctx.obj["JOBS_DIR"], f"{active_role.lower()}.json")
-            if not os.path.exists(role_config_path):
-                raise JobContextError(f"Role configuration not found for '{active_role}' at {role_config_path}")
-            with open(role_config_path, 'r') as f:
-                role_config = json.load(f)
-
-            # 4. Prepare manifest for this specific step execution
+            # 3. Prepare manifest for this specific step execution
             # Create a temporary manifest with current_phase set to the target phase
             restep_manifest = manifest.copy()
             restep_manifest["current_phase"] = target_phase_name
 
-            # 5. Assemble job context for the target phase
+            # 4. Assemble job context for the target phase
             workspace_path = os.path.join(job_dir, "workspace")
-            context = assemble_job_context(job_dir, restep_manifest, role_config)
+            context = assemble_job_context(job_dir, restep_manifest, ctx.obj["JOBS_DIR"], active_role)
 
             # 6. Execute LLM with Cline
             processed_response, execution_time = execute_llm_with_cline(
@@ -906,41 +891,37 @@ class RoleManager:
             return []
 
         for filename in os.listdir(roles_config_path):
-            if filename.endswith(".json"):
+            if filename.endswith(".md"):
                 filepath = os.path.join(roles_config_path, filename)
                 try:
                     with open(filepath, 'r') as f:
-                        role_config = json.load(f)
-                    if "name" in role_config and "description" in role_config:
-                        roles_data.append({
-                            "name": role_config["name"],
-                            "description": role_config["description"]
-                        })
-                    else:
-                        click.secho(f"⚠️  Warning: Skipping malformed role file '{filename}'. Missing 'name' or 'description'.", fg="yellow")
-                except json.JSONDecodeError:
-                    click.secho(f"⚠️  Warning: Skipping malformed JSON role file '{filename}'.", fg="yellow")
+                        role_content = f.read()
+                    # Extract role name from filename (worker.md -> Worker)
+                    role_name = filename.replace('.md', '').title()
+                    roles_data.append({
+                        "name": role_name,
+                        "description": f"Role configuration for {role_name}"
+                    })
                 except Exception as e:
                     click.secho(f"⚠️  Warning: Could not read role file '{filename}': {e}", fg="yellow")
         return roles_data
 
-    def inspect_role(self, role_name: str, jobs_dir: str) -> dict:
+    def inspect_role(self, role_name: str, jobs_dir: str) -> str:
         """Display the detailed configuration for a specific role."""
         roles_config_path = jobs_dir
-        
-        # Search for the role by name in the jobs_dir
-        for filename in os.listdir(roles_config_path):
-            if filename.endswith(".json"):
-                filepath = os.path.join(roles_config_path, filename)
-                try:
-                    with open(filepath, 'r') as f:
-                        role_config = json.load(f)
-                    if role_config.get("name") == role_name:
-                        return role_config
-                except json.JSONDecodeError:
-                    continue # Skip malformed JSON files
-        
-        raise click.ClickException(f"Role '{role_name}' not found.")
+
+        # Search for the role by filename (worker.md, supervisor.md, system.md)
+        expected_filename = f"{role_name.lower()}.md"
+        role_file_path = os.path.join(roles_config_path, expected_filename)
+
+        if os.path.exists(role_file_path):
+            try:
+                with open(role_file_path, 'r') as f:
+                    return f.read()
+            except OSError as e:
+                raise click.ClickException(f"Failed to read role file '{expected_filename}': {e}")
+
+        raise click.ClickException(f"Role '{role_name}' not found (expected file: {expected_filename}).")
 
 
 
@@ -962,24 +943,25 @@ def init_command(jobs_dir: str) -> bool:
 
         os.makedirs(jobs_dir, exist_ok=True)
 
-        roles_to_copy = ["worker.json", "supervisor.json"]
+        roles_and_files_to_copy = ["worker.md", "supervisor.md", "system.md"]
         schema_copied_count = 0
 
-        for role_file in roles_to_copy:
+        for role_file in roles_and_files_to_copy:
             # Load the schema from package resources
             try:
                 resource_file = importlib_resources.files('logist') / 'schemas' / 'roles' / role_file
                 with resource_file.open('r', encoding='utf-8') as f:
-                    role_data = json.load(f)
+                    # Read as text for .md files
+                    role_data = f.read()
 
                 # Write to jobs directory
                 dest_path = os.path.join(jobs_dir, role_file)
                 with open(dest_path, 'w', encoding='utf-8') as f:
-                    json.dump(role_data, f, indent=2)
+                    f.write(role_data)
 
                 schema_copied_count += 1
 
-            except (FileNotFoundError, json.JSONDecodeError, IOError) as e:
+            except (FileNotFoundError, IOError) as e:
                 click.secho(f"⚠️  Warning: Failed to copy schema '{role_file}': {e}", fg="yellow")
             except Exception as e:
                 click.secho(f"⚠️  Warning: Unexpected error copying '{role_file}': {e}", fg="yellow")
@@ -2439,7 +2421,7 @@ def init(ctx):
         click.secho("✅ Jobs directory initialized successfully!", fg="green")
         click.echo(f"   📁 Created directory: {jobs_dir}")
         click.echo("   📋 Created jobs_index.json")
-        click.echo("   📎 Copied worker.json and supervisor.json")
+        click.echo("   📎 Copied worker.md, supervisor.md, and system.md")
     else:
         click.secho("❌ Failed to initialize jobs directory.", fg="red")
 
@@ -2506,17 +2488,24 @@ def preview_job(ctx, job_id: str | None, detailed: bool):
             click.secho(f"   ⚠️  Role config not found: {role_config_path}", fg="yellow")
             return
 
-        # Assemble context before potential early exit or detailed output
-        # If detailed is False, context is still needed for jobHistory.json logging.
+        # Simulate what step_job does: prepare context, workspace, and file arguments
+        click.echo(f"\n📋 Context assembled for execution:")
+
         workspace_dir = os.path.join(job_dir, "workspace")
-        context = assemble_job_context(job_dir, manifest, role_config)
+        context = assemble_job_context(job_dir, manifest, role_config, active_role)
         context = enhance_context_with_previous_outcome(context, job_dir)
 
-        if detailed:
-            click.echo("\n🔧 Detailed Context Preparation:")
+        # Prepare workspace with attachments and file discovery
+        prep_result = workspace_utils.prepare_workspace_attachments(job_dir, workspace_dir)
 
-            # Prepare workspace with attachments and file discovery
-            prep_result = workspace_utils.prepare_workspace_attachments(job_dir, workspace_dir)
+        # Prepare outcome attachments from previous step
+        outcome_prep = prepare_outcome_for_attachments(job_dir, workspace_dir)
+
+        # Final file arguments that would be passed to cline
+        file_arguments = prep_result["file_arguments"] + outcome_prep["attachments_added"] if prep_result["success"] else []
+
+        if detailed:
+            click.echo("\n🔧 Detailed Preparation:")
 
             if prep_result["success"]:
                 if prep_result["attachments_copied"]:
@@ -2533,34 +2522,90 @@ def preview_job(ctx, job_id: str | None, detailed: bool):
                     if len(prep_result["discovered_files"]) > 5:
                         click.echo(f"      ... and {len(prep_result['discovered_files']) - 5} more")
 
-                click.echo(f"   📄 Total file arguments: {len(prep_result['file_arguments'])}")
-
-                # Prepare outcome attachments
-                outcome_prep = prepare_outcome_for_attachments(job_dir, workspace_dir)
-                if outcome_prep["attachments_added"]:
-                    click.echo(f"   🏆 Previous outcomes prepared: {len(outcome_prep['attachments_added'])} files")
-                    for outcome_file in outcome_prep["attachments_added"]:
-                        click.echo(f"      • {os.path.relpath(outcome_file, job_dir)}")
-
-                total_files = len(prep_result["file_arguments"]) + len(outcome_prep["attachments_added"])
-                click.echo(f"   🎯 Total files for --file arguments: {total_files}")
-
             else:
                 click.secho(f"   ⚠️  Workspace preparation failed: {prep_result['error']}", fg="yellow")
 
-            click.echo("\n📋 Context Summary:")
+        click.echo("\n📝 FULL CONTEXT TO BE SENT TO CLINE:")
+        click.echo("=" * 60)
+        click.echo(context)
+        click.echo("=" * 60)
 
-            click.echo(f"   📝 Job ID: {context.get('job_id')}")
-            click.echo(f"   🎭 Role: {context.get('role_name')}")
-            click.echo(f"   📊 History entries: {len(manifest.get('history', []))}")
+        click.echo(f"\n📁 --FILE ATTACHMENTS ({len(file_arguments)} total):")
+        if file_arguments:
+            for i, filearg in enumerate(file_arguments, 1):
+                click.echo(f"   {i:2d}. {os.path.relpath(filearg, workspace_dir) if workspace_dir in filearg else os.path.basename(filearg)}")
+                click.echo(f"       Full path: {filearg}")
+        else:
+            click.echo("   (none)")
 
-            previous_outcome = context.get("previous_outcome")
-            if previous_outcome:
-                click.echo(f"   🏆 Previous outcome available: {previous_outcome.get('action', 'unknown')}")
+        if not detailed:
+            click.echo("\n💡 Use --detailed for comprehensive preparation details")
 
-            outcome_instructions = context.get("outcome_instructions")
-            if outcome_instructions and active_role.lower() == context.get('role_name', '').lower():
-                click.echo("   💬 Role-specific outcome instructions provided")
+        debug_mode = ctx.obj.get("DEBUG", False)
+        if debug_mode:
+            click.echo("\n🔍 DEBUG INFORMATION:")
+
+            # Show manifest details
+            click.echo("   📋 Job Manifest:")
+            click.echo(f"      Job ID: {manifest.get('job_id')}")
+            click.echo(f"      Description: {manifest.get('description')}")
+            click.echo(f"      Status: {manifest.get('status')}")
+            click.echo(f"      Current Phase: {manifest.get('current_phase')}")
+
+            phases = manifest.get("phases", [])
+            if phases:
+                click.echo(f"      Phases: {len(phases)} total")
+                for i, phase in enumerate(phases):
+                    if hasattr(phase, 'get'):
+                        prefix = " -> " if phase.get('name') == manifest.get('current_phase') else "    "
+                        click.echo(f"{prefix}Phase {i}: {phase.get('name')} - {phase.get('description', 'No description')}")
+
+            # Show metrics if available
+            metrics = manifest.get("metrics", {})
+            if metrics:
+                click.echo(f"      Metrics: ${metrics.get('cumulative_cost', 0):.4f} cost, {metrics.get('cumulative_time_seconds', 0):.1f}s time")
+
+            # Show context details
+            click.echo("   🧠 Context Details:")
+            click.echo(f"      Context Keys: {list(context.keys()) if isinstance(context, dict) else 'String context'}")
+            click.echo(f"      Context Size: {len(context):.1f} KB")
+            click.echo(f"      Context Lines: {len(context.split(chr(10))) if isinstance(context, str) else 'N/A'}")
+
+            # Show file attachment details
+            if prep_result["success"]:
+                click.echo("   📄 File Processing Details:")
+                click.echo(f"      Workspace directory: {os.path.relpath(workspace_dir, job_dir)}")
+                click.echo(f"      From workspace prep: {len(prep_result.get('file_arguments', []))} files")
+                click.echo(f"      From previous outcomes: {len(outcome_prep.get('attachments_added', []))} files")
+
+            # Show role configuration
+            click.echo("   👤 Role Configuration:")
+            if os.path.exists(role_config_path):
+                try:
+                    with open(role_config_path, 'r') as f:
+                        role_config_display = json.load(f)
+                    click.echo(f"      Role: {role_config_display.get('name')}")
+                    click.echo(f"      Description: {role_config_display.get('description')}")
+                    click.echo(f"      Config Path: {os.path.relpath(role_config_path, job_dir)}")
+                except Exception as e:
+                    click.echo(f"      Error loading role config: {e}")
+            else:
+                click.echo(f"      Config not found: {role_config_path}")
+
+            # Show what the actual cline command would look like
+            click.echo("   💻 Equivalent Cline Command Preview:")
+            click.echo("   Would execute:")
+            click.echo(f"      cline oneshot task \\")
+            click.echo("        --workspace {workspace_dir} \\")
+            if file_arguments:
+                for filearg in file_arguments[:5]:  # Show first 5
+                    click.echo(f"        --file '{filearg}' \\")
+                if len(file_arguments) > 5:
+                    click.echo(f"        ... and {len(file_arguments) - 5} more file arguments \\")
+            click.echo("        --prompt '...' (full context shown above)")
+            click.echo(f"   💡 Total context size: {len(context)} characters")
+            if file_arguments:
+                click.echo(f"   💡 Total file attachments: {len(file_arguments)}")
 
         # Write to jobHistory.json for preview operation logging with debug display
         from datetime import datetime

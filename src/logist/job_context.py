@@ -10,7 +10,8 @@ class JobContextError(Exception):
 def assemble_job_context(
     job_dir: str,
     job_manifest: Dict[str, Any],
-    role_config: Dict[str, Any]
+    jobs_dir: str,
+    active_role: str
 ) -> Dict[str, Any]:
     """
     Assembles the comprehensive context for an LLM call per prompt requirements.
@@ -39,9 +40,45 @@ def assemble_job_context(
         current_phase_spec = next((p for p in phases if p.get("name") == current_phase_name), None)
 
     # 2. Role Configuration
-    role_name = role_config.get("name", "unknown_role")
-    role_instructions = role_config.get("instructions", "No specific instructions.")
-    role_model = role_config.get("model", "grok-code-fast-1")
+    role_name = active_role.title()  # Derive from active_role parameter
+
+    # Load system.md (always included)
+    system_role_path = os.path.join(jobs_dir, "system.md")
+    system_instructions = ""
+    if os.path.exists(system_role_path):
+        try:
+            with open(system_role_path, 'r') as f:
+                system_instructions = f.read()
+        except OSError:
+            system_instructions = "# System Role\n\nUnable to load system instructions."
+
+    # Load active role's specific instructions
+    role_specific_path = os.path.join(jobs_dir, f"{active_role.lower()}.md")
+    role_specific_instructions = ""
+    if os.path.exists(role_specific_path):
+        try:
+            with open(role_specific_path, 'r') as f:
+                role_specific_instructions = f.read()
+        except OSError:
+            role_specific_instructions = f"# {active_role.title()} Role\n\nUnable to load specific instructions."
+
+    # Combine system + specific role instructions
+    role_instructions = f"{system_instructions}\n\n---\n\n{role_specific_instructions}"
+
+    # Get model from job manifest
+    worker_model = job_manifest.get("worker_model", "grok-code-fast-1")
+    supervisor_model = job_manifest.get("supervisor_model", "grok-code-fast-1")
+    system_model = job_manifest.get("system_model", "grok-code-fast-1")
+
+    # Select appropriate model based on role
+    if active_role.lower() == "worker":
+        role_model = worker_model
+    elif active_role.lower() == "supervisor":
+        role_model = supervisor_model
+    elif active_role.lower() == "system":
+        role_model = system_model
+    else:
+        role_model = "grok-code-fast-1"  # Default fallback
 
     # 3. Workspace Context
     workspace_files_summary = workspace_utils.get_workspace_files_summary(job_dir)
