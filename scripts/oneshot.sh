@@ -9,7 +9,7 @@ set -euo pipefail
 
 if [[ $# -ne 1 ]]; then
     echo "Usage: $0 <prompt_file>"
-    echo "Example: $0 logist/docs/prompts/01-json_validation_unit.md"
+    echo "Example: $0 logist/doc/prompts/01-json_validation_unit.md"
     exit 1
 fi
 
@@ -28,7 +28,7 @@ PROJECT_ROOT=$(cd "$scriptdir/../.."; pwd -P)
 AGENTS_MD="$PROJECT_ROOT/AGENTS.md"
 
 # Verify meta-prompt file exists
-META_PROMPT_FILE="$scriptdir/../docs/prompts/_prompt_instructions.md"
+META_PROMPT_FILE="$scriptdir/../doc/prompts/_prompt_instructions.md"
 if [[ ! -f "$META_PROMPT_FILE" ]]; then
     echo "Warning: Meta-prompt file '$META_PROMPT_FILE' not found"
     if [[ -f "$AGENTS_MD" ]]; then
