@@ -53,7 +53,7 @@ zip-safe = false
 where = ["src"]
 
 [tool.setuptools.package-data]
-logist = ["schemas/roles/*.json"]
+logist = ["schemas/roles/*.json", "schemas/roles/*.md"]
 
 [tool.ruff]
 # Exclude common directories

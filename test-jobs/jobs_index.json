@@ -1,9 +1,0 @@
-{
-  "current_job_id": "test-job",
-  "jobs": {
-    "test-job": "/home/phaedrus/AiSpace/logist/test-jobs/test-job"
-  },
-  "queue": [
-    "test-job"
-  ]
-}

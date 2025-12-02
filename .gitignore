@@ -159,3 +159,4 @@ evidence_files/
 # Configuration overrides
 local_config.json
 user_settings.json
+jobs-test
