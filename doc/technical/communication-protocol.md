@@ -218,6 +218,8 @@ JobHistory enables precise state restoration through recovery checkpoints:
 }
 ```
 
+**Note**: This section describes the design architecture for job history. For comprehensive details about the actual implemented logging and debugging features including `jobHistory.json`, error logging, metrics tracking, and debugging workflows, see **[Logging, Monitoring & Debugging](logging-monitoring.md)**.
+
 ## Flow Control Logic
 
 ### State Machine Transitions

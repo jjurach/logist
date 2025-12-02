@@ -277,7 +277,7 @@ Review the [Architecture Deep Dive](01_architecture.md) and [Role System Details
 
 **For security/cost analysis:**
 - Focus on sections about Git isolation and resource guardrails
-- Study evidence file tracking and job history audit trails
+- Study evidence file tracking and **[Logging, Monitoring & Debugging](technical/logging-monitoring.md)**
 
 ---
 
@@ -295,6 +295,7 @@ Review the [Architecture Deep Dive](01_architecture.md) and [Role System Details
 
 #### **Technical Implementation**
 - **[Communication Protocol](technical/communication-protocol.md)** - JSON schemas & agent responses
+- **[Logging, Monitoring & Debugging](technical/logging-monitoring.md)** - Log files, metrics & debugging
 - **[Implementation History](implementation-history.md)** - Development timeline
 - **[Testing Strategy](06_testing_strategy.md)** - QA and validation
 

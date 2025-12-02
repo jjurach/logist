@@ -50,7 +50,7 @@ logist = "logist.cli:main"
 zip-safe = false
 
 [tool.setuptools.packages.find]
-where = ["."]
+where = ["src"]
 
 [tool.setuptools.package-data]
 logist = ["schemas/roles/*.json"]

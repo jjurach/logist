@@ -1048,6 +1048,7 @@ def main(ctx, jobs_dir, debug):
     ctx.ensure_object(dict)
     ctx.obj["JOBS_DIR"] = jobs_dir
     ctx.obj["DEBUG"] = debug
+    ctx.obj["ENGINE"] = engine # Add the LogistEngine instance to context
     click.echo(f"⚓ Welcome to Logist - Using jobs directory: {jobs_dir}")
 
 
@@ -2505,11 +2506,16 @@ def preview_job(ctx, job_id: str | None, detailed: bool):
             click.secho(f"   ⚠️  Role config not found: {role_config_path}", fg="yellow")
             return
 
+        # Assemble context before potential early exit or detailed output
+        # If detailed is False, context is still needed for jobHistory.json logging.
+        workspace_dir = os.path.join(job_dir, "workspace")
+        context = assemble_job_context(job_dir, manifest, role_config)
+        context = enhance_context_with_previous_outcome(context, job_dir)
+
         if detailed:
             click.echo("\n🔧 Detailed Context Preparation:")
 
             # Prepare workspace with attachments and file discovery
-            workspace_dir = os.path.join(job_dir, "workspace")
             prep_result = workspace_utils.prepare_workspace_attachments(job_dir, workspace_dir)
 
             if prep_result["success"]:
@@ -2543,8 +2549,6 @@ def preview_job(ctx, job_id: str | None, detailed: bool):
                 click.secho(f"   ⚠️  Workspace preparation failed: {prep_result['error']}", fg="yellow")
 
             click.echo("\n📋 Context Summary:")
-            context = assemble_job_context(job_dir, manifest, role_config)
-            context = enhance_context_with_previous_outcome(context, job_dir)
 
             click.echo(f"   📝 Job ID: {context.get('job_id')}")
             click.echo(f"   🎭 Role: {context.get('role_name')}")
@@ -2579,11 +2583,16 @@ def preview_job(ctx, job_id: str | None, detailed: bool):
                 "metrics": {}
             }
         }
-        self._write_job_history_entry(job_dir, job_history_entry)
+        # Access the engine from context and write history entry
+        engine = ctx.obj.get("ENGINE")
+        if engine:
+            engine._write_job_history_entry(job_dir, job_history_entry)
 
-        # Debug verbose logging
-        debug_mode = ctx.obj.get("DEBUG", False)
-        self._show_debug_history_info(debug_mode, "preview", final_job_id, job_history_entry)
+            # Debug verbose logging
+            debug_mode = ctx.obj.get("DEBUG", False)
+            engine._show_debug_history_info(debug_mode, "preview", final_job_id, job_history_entry)
+        else:
+            click.secho("⚠️  Warning: LogistEngine not available in context for history logging", fg="yellow")
 
         click.secho("   ✅ Preview completed successfully", fg="green")
 
