@@ -60,10 +60,11 @@ class TestInitRoles:
         jobs_dir = tmp_path / "test_jobs"
 
         # Mock the path to a non-existent file
+        original_join = os.path.join
         def mock_join(*args):
             if len(args) >= 4 and args[-1] == 'default-roles.json':
                 return str(tmp_path / "nonexistent.json")
-            return os.path.join(*args)
+            return original_join(*args)
 
         monkeypatch.setattr(os.path, "join", mock_join)
 
@@ -88,10 +89,11 @@ class TestInitRoles:
         malformed_file = tmp_path / "malformed.json"
         malformed_file.write_text('{"roles": {"Worker": {invalid json}')
 
+        original_join = os.path.join
         def mock_join(*args):
             if len(args) >= 4 and args[-1] == 'default-roles.json':
                 return str(malformed_file)
-            return os.path.join(*args)
+            return original_join(*args)
 
         monkeypatch.setattr(os.path, "join", mock_join)
 

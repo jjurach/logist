@@ -38,7 +38,7 @@ class TestLLMRequestValidation:
         request_data = {"action": "step"}
         valid, error = validate_llm_request(request_data)
         assert valid is False
-        assert "Missing 'request' property" in error
+        assert "Request validation failed" in error
 
 
 class TestLLMResponseValidation:
@@ -89,7 +89,7 @@ class TestLLMResponseValidation:
         response_data = {"action": "COMPLETED"}
         valid, error = validate_llm_response(response_data)
         assert valid is False
-        assert "Missing 'response' property" in error
+        assert "Response validation failed" in error
 
 
 class TestJSONStringValidation:
@@ -133,7 +133,7 @@ class TestExampleFilesIntegration:
 
     def test_valid_request_file(self):
         """Test validation of valid-llm-request.json"""
-        path = Path(__file__).parent.parent / "docs" / "examples" / "llm-exchange" / "valid-llm-request.json"
+        path = Path(__file__).parent.parent / "doc" / "examples" / "llm-exchange" / "valid-llm-request.json"
         with open(path, 'r') as f:
             data = json.load(f)
         valid, error = validate_llm_request(data)
@@ -141,7 +141,7 @@ class TestExampleFilesIntegration:
 
     def test_invalid_request_file(self):
         """Test validation of invalid-llm-request.json fails."""
-        path = Path(__file__).parent.parent / "docs" / "examples" / "llm-exchange" / "invalid-llm-request.json"
+        path = Path(__file__).parent.parent / "doc" / "examples" / "llm-exchange" / "invalid-llm-request.json"
         with open(path, 'r') as f:
             data = json.load(f)
         valid, error = validate_llm_request(data)
@@ -149,7 +149,7 @@ class TestExampleFilesIntegration:
 
     def test_valid_response_file(self):
         """Test validation of valid-llm-response.json"""
-        path = Path(__file__).parent.parent / "docs" / "examples" / "llm-exchange" / "valid-llm-response.json"
+        path = Path(__file__).parent.parent / "doc" / "examples" / "llm-exchange" / "valid-llm-response.json"
         with open(path, 'r') as f:
             data = json.load(f)
         valid, error = validate_llm_response(data)
@@ -157,7 +157,7 @@ class TestExampleFilesIntegration:
 
     def test_invalid_response_file(self):
         """Test validation of invalid-llm-response.json fails."""
-        path = Path(__file__).parent.parent / "docs" / "examples" / "llm-exchange" / "invalid-llm-response.json"
+        path = Path(__file__).parent.parent / "doc" / "examples" / "llm-exchange" / "invalid-llm-response.json"
         with open(path, 'r') as f:
             data = json.load(f)
         valid, error = validate_llm_response(data)

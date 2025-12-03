@@ -245,6 +245,12 @@ class JobManagerService:
         """Simulate terminating a job."""
         print(f"🛑 [LOGIST] Terminating job '{job_id}' workflow")
 
+    def run_job_phase(self, ctx: any, job_id: str, job_dir: str, dry_run: bool = False) -> bool:
+        """Execute a job phase using the LogistEngine."""
+        from ..core_engine import LogistEngine
+        engine = LogistEngine()
+        return engine.step_job(ctx, job_id, job_dir, dry_run=dry_run)
+
     def setup_workspace(self, job_dir: str) -> None:
         """Setup isolated workspace with branch management for advanced isolation."""
         # Extract job_id from directory path

@@ -16,7 +16,7 @@ except ImportError:
 
 def _load_schema():
     """Load the JSON schema from the project schemas directory."""
-    schema_path = Path(__file__).parent.parent / "schemas" / "llm-chat-schema.json"
+    schema_path = Path(__file__).parent / "llm-chat-schema.json"
     with open(schema_path, 'r') as f:
         return json.load(f)
 

@@ -137,7 +137,7 @@ class LogistEngine:
             # 5. Continue with normal execution until completion or intervention
             # For now, execute one step (matching the pattern of other commands)
             # Future enhancement could implement continuous rerun until completion
-            success = self.step_job(ctx, job_id, job_dir, dry_run=dry_run)
+            success = manager.run_job_phase(ctx, job_id, job_dir, dry_run=False)
 
             # Always report success for the rerun command itself, even if the step fails
             # The rerun state reset was successful, and future runs/steps can be attempted
