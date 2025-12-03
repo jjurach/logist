@@ -25,6 +25,10 @@ from logist.job_context import assemble_job_context, JobContextError  # Now exis
 from logist.recovery import validate_state_persistence, get_recovery_status, RecoveryError
 from logist.metrics_utils import check_thresholds_before_execution, calculate_detailed_metrics, generate_cost_projections, export_metrics_to_csv, ThresholdExceededError
 
+# Create aliases for backward compatibility with tests
+JobManager = JobManagerService
+RoleManager = RoleManagerService
+
 
 
 
@@ -128,6 +132,11 @@ def get_job_dir(ctx, job_id: str) -> str | None:
     "--debug",
     is_flag=True,
     help="Enable debug output for detailed operation logging.",
+)
+@click.option(
+    "--enhance",
+    is_flag=True,
+    help="Enable enhanced context assembly for agent prompts.",
 )
 @click.pass_context
 def main(ctx, jobs_dir, debug, enhance):
