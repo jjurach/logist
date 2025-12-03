@@ -1536,9 +1536,10 @@ def inspect_role(ctx, role_name: str):
     click.echo(f"👤 Executing 'logist role inspect {role_name}'")
     try:
         role_data = role_manager.inspect_role(role_name, jobs_dir)
-        click.echo(json.dumps(role_data, indent=2))
-    except click.ClickException as e:
-        click.secho(f"❌ {e.message}", fg="red")
+        click.echo(role_data)
+    except Exception as e:
+        click.secho(f"❌ Role '{role_name}' not found.", fg="red")
+        ctx.exit(1)
 
 
 @main.command()
