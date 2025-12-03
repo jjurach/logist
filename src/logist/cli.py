@@ -237,7 +237,7 @@ class LogistEngine:
                 click.echo(f"   🏆 Prepared outcome data from previous {len(outcome_prep['attachments_added'])} steps")
 
             # 7. Assemble job context with enhanced preparation
-            context = assemble_job_context(job_dir, manifest, ctx.obj["JOBS_DIR"], active_role)
+            context = assemble_job_context(job_dir, manifest, ctx.obj["JOBS_DIR"], active_role, enhance=False)
             context = enhance_context_with_previous_outcome(context, job_dir)
 
             # 8. Execute LLM with Cline using discovered file arguments
@@ -489,7 +489,7 @@ class LogistEngine:
 
             # 4. Assemble job context for the target phase
             workspace_path = os.path.join(job_dir, "workspace")
-            context = assemble_job_context(job_dir, restep_manifest, ctx.obj["JOBS_DIR"], active_role)
+            context = assemble_job_context(job_dir, restep_manifest, ctx.obj["JOBS_DIR"], active_role, enhance=False)
 
             # 6. Execute LLM with Cline
             processed_response, execution_time = execute_llm_with_cline(
@@ -2492,7 +2492,7 @@ def preview_job(ctx, job_id: str | None, detailed: bool):
         click.echo(f"\n📋 Context assembled for execution:")
 
         workspace_dir = os.path.join(job_dir, "workspace")
-        context = assemble_job_context(job_dir, manifest, role_config, active_role)
+        context = assemble_job_context(job_dir, manifest, ctx.obj["JOBS_DIR"], active_role, enhance=False)
         context = enhance_context_with_previous_outcome(context, job_dir)
 
         # Prepare workspace with attachments and file discovery
