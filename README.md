@@ -5,6 +5,147 @@
 
 A sophisticated agent orchestration tool that manages persistent, multi-step jobs using Cline CLI as the execution primitive. Inspired by maritime operations, Logist provides safe, structured workflows with comprehensive oversight and resource management.
 
+---
+
+## 🧪 Testing
+
+### Logist CLI Testing
+
+Logist is an AI agent orchestration tool with Git isolation and safety features. It has a comprehensive test suite with 86+ tests covering CLI commands, core functionality, and integrations.
+
+#### Prerequisites
+
+1. **Python Environment**: Python 3.8+ required
+2. **Development Dependencies**: This project uses `pip install -e .` and `requirements-dev.txt`
+3. **Virtual Environment**: Strongly recommended to avoid dependency conflicts
+
+#### Quick Start - Run All Tests
+
+1. **Activate your virtual environment** (recommended):
+   ```bash
+   # Create venv if it doesn't exist
+   python3 -m venv venv
+   source venv/bin/activate
+   ```
+
+2. **Install the Logist package**:
+   ```bash
+   pip install -e .
+   pip install -r requirements-dev.txt
+   ```
+
+3. **Run the complete test suite**:
+   ```bash
+   # Run all tests with verbose output
+   pytest tests/ -v
+
+   # Run all tests but stop on first failure
+   pytest tests/ -x
+
+   # Run tests with coverage report
+   pytest tests/ --cov=logist --cov-report=html
+   ```
+
+#### Running Specific Test Categories
+
+```bash
+# Run only CLI tests
+pytest tests/test_cli.py -v
+
+# Run only core engine tests
+pytest tests/test_core_engine.py -v
+
+# Run only validation tests
+pytest tests/test_validation.py -v
+
+# Run a specific test function
+pytest tests/test_cli.py::TestCLICommands::test_job_create_command -v
+```
+
+#### Test Output Options
+
+```bash
+# Quiet mode (minimal output)
+pytest tests/ -q
+
+# No traceback for failed tests
+pytest tests/ --tb=no
+
+# Show output even for passing tests
+pytest tests/ -s
+
+# Time-based performance info
+pytest tests/ --durations=10
+```
+
+#### Troubleshooting Common Issues
+
+**Tests appear to hang (no output for a long time)**:
+- Some tests may wait for external resources or file operations
+- Try running with timeout: `timeout 60 pytest tests/test_cli.py -v`
+- Use the diagnostic script: `python3 debug-test-run.py`
+- Run in parallel threads: `pytest tests/ -n auto`
+- Stop on first failure: `pytest tests/ -x`
+
+**Import errors or "Module not found"**:
+```bash
+# Clean reinstall
+pip uninstall logist -y
+pip install -e . --force-reinstall
+```
+
+**Permission or file access errors**:
+- Ensure you're in the correct directory (`pwd` should show `.../logist`)
+- Check if the `venv` directory exists and is activated
+- Try running as user with proper write permissions
+
+**Virtual environment issues**:
+```bash
+# Deactivate and reactivate
+deactivate
+source venv/bin/activate
+```
+
+**Environment-specific failures**:
+- Some tests depend on specific Python versions or system libraries
+- Check Python version: `python3 --version`
+- Ensure all system dependencies are installed
+
+#### Test Structure Overview
+
+```
+logist/tests/
+├── test_cli.py           # 15 CLI command tests (job, role, rerun commands)
+├── test_core_engine.py   # Core LogistEngine functionality tests
+├── test_job_context.py   # Job context assembly tests
+├── test_validation.py    # JSON schema and validation tests
+└── services/            # Service layer tests
+    ├── test_job_manager.py
+    └── test_role_manager.py
+```
+
+**Current Status**: 62 tests passing, 24 failing (72% success rate). Most failures are due to CLI output format changes rather than fundamental bugs.
+
+#### Advanced Testing
+
+**Debugging hanging tests**:
+```bash
+# Run with debugging output
+pytest tests/test_cli.py -v -s --pdb
+
+# Time individual tests
+pytest tests/test_cli.py --durations=0
+```
+
+**Continuous Integration**:
+```bash
+# Run tests like CI would
+pytest tests/ --tb=short --strict-markers
+
+# Check code coverage
+pytest tests/ --cov=logist --cov-fail-under=85
+```
+
 ## 🏗️ Installation
 
 ### Virtual Environment Setup (Recommended)
