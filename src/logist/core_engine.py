@@ -99,7 +99,7 @@ class LogistEngine:
             if len(evidence_files) > 3:
                 print(f"         ... and {len(evidence_files) - 3} more")
 
-    def rerun_job(self, ctx: any, job_id: str, job_dir: str, start_step: int | None = None) -> None:
+    def rerun_job(self, ctx: any, job_id: str, job_dir: str, start_step: int | None = None, dry_run: bool = False) -> None:
         """Re-execute a job, optionally starting from a specific phase."""
         # Import services dynamically to avoid circular imports
         from .services import JobManagerService
@@ -137,7 +137,7 @@ class LogistEngine:
             # 5. Continue with normal execution until completion or intervention
             # For now, execute one step (matching the pattern of other commands)
             # Future enhancement could implement continuous rerun until completion
-            success = self.step_job(ctx, job_id, job_dir, dry_run=False)
+            success = self.step_job(ctx, job_id, job_dir, dry_run=dry_run)
 
             # Always report success for the rerun command itself, even if the step fails
             # The rerun state reset was successful, and future runs/steps can be attempted
@@ -237,7 +237,8 @@ class LogistEngine:
             processed_response, execution_time = execute_llm_with_cline(
                 context=context,
                 workspace_dir=workspace_dir,
-                file_arguments=file_arguments
+                file_arguments=file_arguments,
+                dry_run=dry_run
             )
 
             response_action = processed_response.get("action")

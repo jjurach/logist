@@ -69,10 +69,36 @@ class RoleManagerService:
             if os.path.exists(role_file_path):
                 try:
                     if filename.endswith('.json'):
-                        # Return JSON data
+                        # Load JSON data and format as markdown for consistent display
                         with open(role_file_path, 'r') as f:
                             role_data = json.load(f)
-                        return json.dumps(role_data, indent=2)
+
+                        # Format JSON role data as markdown
+                        markdown_output = []
+                        markdown_output.append(f"# {role_data['name']} Role")
+                        markdown_output.append("")
+
+                        description = role_data.get('description', 'No description available')
+                        markdown_output.append(f"{description}.")
+                        markdown_output.append("")
+
+                        instructions = role_data.get('instructions', '')
+                        if instructions:
+                            markdown_output.append("## Responsibilities")
+                            # Split instructions into meaningful sections
+                            # For now, just use the full instructions
+                            markdown_output.append("")
+                            markdown_output.append(instructions)
+                            markdown_output.append("")
+
+                        llm_model = role_data.get('llm_model', 'default')
+                        if llm_model:
+                            markdown_output.append("## Configuration")
+                            markdown_output.append(f"- **LLM Model**: {llm_model}")
+                            markdown_output.append("")
+
+                        return "\n".join(markdown_output).strip()
+
                     else:
                         # Return .md content as text
                         with open(role_file_path, 'r') as f:

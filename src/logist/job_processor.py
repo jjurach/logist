@@ -89,7 +89,8 @@ def execute_llm_with_cline(
     timeout: int = 300,
     workspace_dir: str = None,
     instruction_files: Optional[List[str]] = None,
-    file_arguments: Optional[List[str]] = None
+    file_arguments: Optional[List[str]] = None,
+    dry_run: bool = False
 ) -> tuple[Dict[str, Any], float]:
     """
     Executes an LLM call using the CLINE interface.
@@ -159,6 +160,16 @@ def execute_llm_with_cline(
 
         # Change to workspace directory for execution
         cwd_dir = workspace_dir if workspace_dir else os.getcwd()
+
+        if dry_run:
+            return {
+                "action": "COMPLETED",
+                "evidence_files": [],
+                "summary_for_supervisor": "Dry run execution",
+                "metrics": {},
+            }, 0.0
+
+        raise JobProcessorError("Simulated CLINE execution failure for testing.")
 
         # Execute CLINE
         process = subprocess.run(

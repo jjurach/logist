@@ -215,9 +215,9 @@ class TestCLICommands:
         assert result_inspect.exit_code == 0
         # Updated expectations to match current markdown output format
         assert "# Worker Role" in result_inspect.output
-        assert "You are a skilled software engineer" in result_inspect.output
+        assert "You are an expert software engineer" in result_inspect.output
         assert "Responsibilities" in result_inspect.output
-        assert "Guidelines" in result_inspect.output
+        assert "Configuration" in result_inspect.output
 
     def test_role_inspect_command_non_existent_role(self, tmp_path):
         """Test 'logist role inspect' for non-existent role."""
@@ -246,10 +246,9 @@ class TestCLICommands:
 
         # Try to inspect Worker - should skip malformed file and show error
         result_inspect = self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "role", "inspect", "Worker"])
-        # Should either find it in supervisor.json (if implementation tries other files) or show not found
-        # The current implementation searches for role name across all JSON files, skipping malformed ones
-        assert result_inspect.exit_code == 0 # Error is handled gracefully
-        # Could show "Role 'Worker' not found" if all Worker files are malformed, or succeed if it finds it elsewhere
+        # Should behave like role not found since the Worker file is malformed
+        assert result_inspect.exit_code == 1  # CLI exits with 1 for not found roles
+        assert "Role 'Worker' not found" in result_inspect.output
 
     def test_role_inspect_command_custom_role(self, tmp_path):
         """Test 'logist role inspect' with a custom role file."""

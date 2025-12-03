@@ -1,5 +1,6 @@
 -r requirements.txt
 pytest>=7.0.0
+pytest-mock
 pytest-cov
 click>=8.0.0
 black
