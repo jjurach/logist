@@ -63,3 +63,92 @@ To aid in debugging, cost control, and build confidence in agent actions, Logist
 
 -   **Prompt Preview**: Allows viewing the exact prompt intended for the next agent run without executing it.
 -   **Dry Run Simulation**: Simulates an entire Worker -> Supervisor execution cycle using mock data, demonstrating the logical flow and data transformations without actual LLM calls or state changes.
+
+## Modular Architecture (v2.0)
+
+### Architectural Evolution
+The Logist codebase has been refactored from a monolithic CLI structure to a modular, service-oriented architecture. This refactoring addresses the growing complexity of the CLI implementation by separating concerns and enabling better testability and maintainability.
+
+### Core Components
+
+#### 1. CLI Layer (`cli.py`)
+The command-line interface now serves as a thin orchestration layer that:
+- Parses user arguments and options
+- Manages global context and configuration
+- Dispatches commands to appropriate service layers
+- Handles user interaction (prompts, confirmations, colored output)
+
+The CLI layer is intentionally lightweight and focuses on user experience rather than business logic.
+
+#### 2. Core Engine (`core_engine.py`)
+The `LogistEngine` class handles the primary job execution orchestration logic including:
+- **Job stepping**: Single-phase execution with workspace preparation and LLM invocation
+- **Job running**: Continuous execution until completion or intervention
+- **Job rerunning**: Restart capability with state reset and phase skipping
+- **Job restepping**: Checkpoint restoration within a run
+- **History management**: Debug logging and job history persistence
+- **Execution coordination**: Integration between job processor, context assembly, and workspace utilities
+
+The Core Engine represents the "brain" of the system - orchestrating the complex interactions between jobs, agents, and the filesystem.
+
+#### 3. Service Layer (`services/`)
+Specialized service classes handle domain-specific operations:
+
+##### JobManagerService (`services/job_manager.py`)
+Manages job lifecycle and metadata operations:
+- Job creation and registration with the jobs index
+- Job selection and status retrieval
+- Job listing and inspection
+- Workspace setup and isolation
+- Job history and manifest management
+
+##### RoleManagerService (`services/role_manager.py`)
+Handles agent role configuration and loading:
+- Role discovery from configuration files
+- Role inspection and content retrieval
+- Role validation and metadata management
+
+### Architectural Benefits
+
+#### Improved Testability
+- Each service can be unit tested in isolation
+- Mock dependencies enable focused testing of individual components
+- Service interfaces allow for easy integration testing
+- Clear separation enables comprehensive test coverage
+
+#### Enhanced Maintainability
+- Single Responsibility Principle: Each module has a clear, focused purpose
+- Reduced coupling between components
+- Easier debugging: Issues can be isolated to specific layers
+- Code reusability: Services can be used across different CLI commands
+
+#### Better Developer Experience
+- Faster development cycles with modular components
+- Clear interfaces between services
+- Easier onboarding: New developers can understand individual services without the full system complexity
+- Incremental feature development: New functionality can be added to specific services
+
+#### Scalability Considerations
+- Service layer enables future API development (REST, GraphQL)
+- Modular design supports microservice evolution if needed
+- Clear boundaries enable parallel development by multiple team members
+- Component isolation supports performance optimization of individual services
+
+### Migration Path
+The refactoring maintains full backward compatibility while providing a foundation for future enhancements:
+
+1. **CLI Layer**: Commands work identically, only internal delegation changed
+2. **Service APIs**: Stable interfaces enable reliable integration
+3. **Testing**: Comprehensive unit tests ensure functionality preservation
+4. **Documentation**: Updated to reflect new architectural boundaries
+
+### Future Extensions
+The modular architecture enables several future enhancements:
+
+- **Web UI**: Service layer can support REST API endpoints
+- **Configuration Management**: Services can support multiple backends
+- **Plugin Architecture**: Well-defined interfaces enable extensibility
+- **Advanced Monitoring**: Service metrics and health checks
+- **Multi-tenancy**: Service isolation supports concurrent users
+
+This architectural evolution positions Logist for continued growth while maintaining its core strengths in job orchestration and agent management.
