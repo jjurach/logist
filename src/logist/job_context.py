@@ -11,7 +11,8 @@ def assemble_job_context(
     job_dir: str,
     job_manifest: Dict[str, Any],
     jobs_dir: str,
-    active_role: str
+    active_role: str,
+    enhance: bool = False
 ) -> Dict[str, Any]:
     """
     Assembles the comprehensive context for an LLM call per prompt requirements.
@@ -103,26 +104,38 @@ def assemble_job_context(
     # Summarize metrics
     metrics_summary = f"Total cost: ${metrics.get('cumulative_cost', 0):.4f}, Total time: {metrics.get('cumulative_time_seconds', 0):.2f}s"
 
-    # 5. Assemble complete context
-    context = {
-        "job_id": job_id,
-        "description": job_manifest.get("description", "A Logist job."),
-        "status": job_manifest.get("status", "PENDING"),
-        "current_phase": current_phase_name,
-        "phase_specification": current_phase_spec,
-        "role_name": role_name,
-        "role_instructions": role_instructions,
-        "role_model": role_model,
-        "workspace_files": workspace_files_summary,
-        "workspace_git_status": workspace_git_status,
-        "job_history_summary": history_summary,
-        "job_metrics_summary": metrics_summary,
-        "all_phases": phases,
-        "manifest_version": job_manifest  # Include full manifest for complete context
-    }
+    # 5. Assemble context based on enhance flag
+    if not enhance:
+        # Minimal context - only file references and basic information
+        context = {
+            "job_id": job_id,
+            "description": job_manifest.get("description", "A Logist job."),
+            "status": job_manifest.get("status", "PENDING"),
+            "current_phase": current_phase_name,
+            "workspace_files": workspace_files_summary,  # Keep this for file discovery
+            "role_name": role_name,
+            "role_model": role_model
+        }
+    else:
+        # Enhanced context - include all available information
+        context = {
+            "job_id": job_id,
+            "description": job_manifest.get("description", "A Logist job."),
+            "status": job_manifest.get("status", "PENDING"),
+            "current_phase": current_phase_name,
+            "phase_specification": current_phase_spec,
+            "role_name": role_name,
+            "role_instructions": role_instructions,
+            "role_model": role_model,
+            "workspace_files": workspace_files_summary,
+            "workspace_git_status": workspace_git_status,
+            "job_history_summary": history_summary,
+            "job_metrics_summary": metrics_summary,
+            "all_phases": phases,
+            "manifest_version": job_manifest  # Include full manifest for complete context
+        }
 
     return context
-
 def format_llm_prompt(context: Dict[str, Any], format_type: str = "human-readable") -> str:
     """
     Formats the job context into a prompt for the LLM.

@@ -237,7 +237,7 @@ class LogistEngine:
                 click.echo(f"   🏆 Prepared outcome data from previous {len(outcome_prep['attachments_added'])} steps")
 
             # 7. Assemble job context with enhanced preparation
-            context = assemble_job_context(job_dir, manifest, ctx.obj["JOBS_DIR"], active_role, enhance=False)
+            context = assemble_job_context(job_dir, manifest, ctx.obj["JOBS_DIR"], active_role, enhance=ctx.obj.get("ENHANCE", False))
             context = enhance_context_with_previous_outcome(context, job_dir)
 
             # 8. Execute LLM with Cline using discovered file arguments
@@ -1025,11 +1025,12 @@ def get_job_dir(ctx, job_id: str) -> str | None:
     help="Enable debug output for detailed operation logging.",
 )
 @click.pass_context
-def main(ctx, jobs_dir, debug):
+def main(ctx, jobs_dir, debug, enhance):
     """Logist - Sophisticated Agent Orchestration."""
     ctx.ensure_object(dict)
     ctx.obj["JOBS_DIR"] = jobs_dir
     ctx.obj["DEBUG"] = debug
+    ctx.obj["ENHANCE"] = enhance
     ctx.obj["ENGINE"] = engine # Add the LogistEngine instance to context
     click.echo(f"⚓ Welcome to Logist - Using jobs directory: {jobs_dir}")
 
@@ -2492,7 +2493,7 @@ def preview_job(ctx, job_id: str | None, detailed: bool):
         click.echo(f"\n📋 Context assembled for execution:")
 
         workspace_dir = os.path.join(job_dir, "workspace")
-        context = assemble_job_context(job_dir, manifest, ctx.obj["JOBS_DIR"], active_role, enhance=False)
+        context = assemble_job_context(job_dir, manifest, ctx.obj["JOBS_DIR"], active_role, enhance=ctx.obj.get("ENHANCE", False))
         context = enhance_context_with_previous_outcome(context, job_dir)
 
         # Prepare workspace with attachments and file discovery

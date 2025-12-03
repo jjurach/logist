@@ -274,6 +274,24 @@ class TestCLICommands:
         assert '"llm_model": "gemini-2.5-flash"' in result_inspect.output
 
 
+    def test_enhance_flag_parsing(self, tmp_path):
+        """Test that --enhance flag is properly parsed and stored in context."""
+        jobs_dir = tmp_path / "jobs"
+        jobs_dir.mkdir()
+
+        # Initialize jobs directory
+        self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "init"])
+
+        # Test flag present
+        result = self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "--enhance", "job", "list"])
+        # The flag should be parsed without errors - we just check it runs successfully
+        assert result.exit_code == 0
+        # Since we can't easily inspect the context object, we just verify the command runs
+
+        # Test flag absent
+        result = self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "job", "list"])
+        assert result.exit_code == 0
+        # Command should still work without the flag
 class TestJobChatCommand:
     """Test the job chat command functionality."""
 
@@ -595,3 +613,20 @@ def test_import_main():
     from logist.cli import main
 
     assert callable(main), "main should be callable"
+    def test_enhance_flag_parsing(self, tmp_path):
+        """Test that --enhance flag is properly parsed and stored in context."""
+        jobs_dir = tmp_path / "jobs"
+        jobs_dir.mkdir()
+
+        # Initialize jobs directory
+        self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "init"])
+
+        # Test flag present
+        result = self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "--enhance", "job", "list"])
+        # The flag should be parsed without errors - we just check it runs successfully
+        assert result.exit_code == 0
+        # Since we can't easily inspect the context object, we just verify the command runs
+
+        # Test flag absent
+        result = self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "job", "list"])
+        assert result.exit_code == 0
