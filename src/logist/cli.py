@@ -75,6 +75,28 @@ def init_command(jobs_dir: str) -> bool:
             except Exception as e:
                 click.secho(f"⚠️  Warning: Unexpected error copying '{role_file}': {e}", fg="yellow")
 
+        # Load default roles configuration and generate individual JSON files
+        roles_config_path = os.path.join(os.path.dirname(__file__), '..', '..', 'config', 'default-roles.json')
+        roles_copied_count = 0
+        try:
+            with open(roles_config_path, 'r') as f:
+                default_roles = json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            click.secho(f"⚠️  Warning: Failed to load default roles config: {e}", fg="yellow")
+            default_roles = None
+
+        # Generate individual role JSON files
+        if default_roles and "roles" in default_roles:
+            for role_name, role_config in default_roles["roles"].items():
+                role_json_path = os.path.join(jobs_dir, f"{role_name.lower()}.json")
+                try:
+                    with open(role_json_path, 'w') as f:
+                        json.dump(role_config, f, indent=2)
+                    roles_copied_count += 1
+                    click.echo(f"   📄 Generated {role_name.lower()}.json")
+                except OSError as e:
+                    click.secho(f"⚠️  Warning: Failed to write {role_name.lower()}.json: {e}", fg="yellow")
+
         # Create jobs index
         jobs_index_path = os.path.join(jobs_dir, "jobs_index.json")
         jobs_index_data = {
@@ -86,6 +108,7 @@ def init_command(jobs_dir: str) -> bool:
             json.dump(jobs_index_data, f, indent=2)
 
         click.echo(f"   📎 Copied {schema_copied_count} schema file(s)")
+        click.echo(f"   📋 Generated {roles_copied_count} role config file(s)")
 
         return True
     except Exception as e:
