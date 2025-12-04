@@ -52,7 +52,7 @@ def init_command(jobs_dir: str) -> bool:
 
         os.makedirs(jobs_dir, exist_ok=True)
 
-        roles_and_files_to_copy = ["worker.md", "supervisor.md", "system.md"]
+        roles_and_files_to_copy = ["worker.md", "worker.json", "supervisor.md", "supervisor.json", "system.md"]
         schema_copied_count = 0
 
         for role_file in roles_and_files_to_copy:
@@ -85,17 +85,29 @@ def init_command(jobs_dir: str) -> bool:
             click.secho(f"⚠️  Warning: Failed to load default roles config: {e}", fg="yellow")
             default_roles = None
 
-        # Generate individual role JSON files
+        # Generate individual role JSON files and MD files (only for roles not copied from schemas)
         if default_roles and "roles" in default_roles:
             for role_name, role_config in default_roles["roles"].items():
                 role_json_path = os.path.join(jobs_dir, f"{role_name.lower()}.json")
+                role_md_path = os.path.join(jobs_dir, f"{role_name.lower()}.md")
+                # Skip if we already copied this file from schemas
+                if os.path.exists(role_json_path) and os.path.exists(role_md_path):
+                    continue
                 try:
-                    with open(role_json_path, 'w') as f:
-                        json.dump(role_config, f, indent=2)
-                    roles_copied_count += 1
-                    click.echo(f"   📄 Generated {role_name.lower()}.json")
+                    # Create JSON config file
+                    if not os.path.exists(role_json_path):
+                        with open(role_json_path, 'w') as f:
+                            json.dump(role_config, f, indent=2)
+                        roles_copied_count += 1
+                        click.echo(f"   📄 Generated {role_name.lower()}.json")
+
+                    # Create MD instructions file
+                    if not os.path.exists(role_md_path) and "instructions" in role_config:
+                        with open(role_md_path, 'w') as f:
+                            f.write(role_config["instructions"])
+                        click.echo(f"   📝 Generated {role_name.lower()}.md")
                 except OSError as e:
-                    click.secho(f"⚠️  Warning: Failed to write {role_name.lower()}.json: {e}", fg="yellow")
+                    click.secho(f"⚠️  Warning: Failed to write role files for {role_name.lower()}: {e}", fg="yellow")
 
         # Create jobs index
         jobs_index_path = os.path.join(jobs_dir, "jobs_index.json")
@@ -109,6 +121,7 @@ def init_command(jobs_dir: str) -> bool:
 
         click.echo(f"   📎 Copied {schema_copied_count} schema file(s)")
         click.echo(f"   📋 Generated {roles_copied_count} role config file(s)")
+        click.echo("   📝 Generated role instructions file(s)")
 
         return True
     except Exception as e:
