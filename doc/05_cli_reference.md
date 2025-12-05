@@ -143,6 +143,7 @@ Activates a DRAFT job for execution by transitioning it to PENDING state and add
     -   Changes job status from DRAFT to PENDING
     -   Adds job to execution queue at specified position
     -   Generates `prompt.md` from configuration data
+    -   Creates job workspace directory for immediate execution readiness
 -   **State Restriction**: Job must be in DRAFT state to activate
 -   **Example**:
     ```bash
@@ -223,11 +224,13 @@ Performs a **non-destructive preview** of the next agent interaction for a given
 
 These commands control the lifecycle and execution flow of a job. If `JOB_ID` is omitted, they operate on the **currently selected job**.
 
--   **`logist job run [JOB_ID]`**: Executes a job continuously until it completes or requires human intervention.
--   **`logist job step [JOB_ID] [--dry-run]`**: Executes only the next single phase of a job and then pauses.
+All execution commands create the job workspace directory (if it doesn't exist) before proceeding with execution. See [Job Isolation section](../01_architecture.md#job-isolation-safety-first) for workspace creation details.
+
+-   **`logist job run [JOB_ID]`**: Executes a job continuously until it completes or requires human intervention. Creates workspace if needed.
+-   **`logist job step [JOB_ID] [--dry-run]`**: Executes only the next single phase of a job and then pauses. Creates workspace if needed.
     -   **`--dry-run` (option)**: Simulates a full step without making real LLM calls or modifying state.
--   **`logist job rerun [JOB_ID]`**: Resets a job completely to its initial state.
--   **`logist job restep [JOB_ID]`**: Reverts a job to its previous checkpoint.
+-   **`logist job rerun [JOB_ID]`**: Resets a job completely to its initial state. Creates workspace if needed.
+-   **`logist job restep [JOB_ID]`**: Reverts a job to its previous checkpoint within the current run. Creates workspace if needed.
 
 
 ---

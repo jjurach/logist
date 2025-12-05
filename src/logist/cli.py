@@ -2016,6 +2016,15 @@ def activate_job(ctx, job_id: str | None, rank: int):
         with open(jobs_index_path, 'w') as f:
             json.dump(jobs_index, f, indent=2)
 
+        # Setup workspace for immediate execution readiness
+        try:
+            manager.setup_workspace(job_dir)
+            click.echo("   🏗️  Workspace initialized")
+        except Exception as e:
+            # Log warning but don't fail activation - user can still run commands
+            click.secho(f"   ⚠️  Workspace setup failed: {e}", fg="yellow")
+            click.echo("   💡 Workspace will be created when execution begins")
+
         click.secho(f"   ✅ Job '{final_job_id}' activated successfully!", fg="green")
         click.echo(f"   🔄 Status changed: {JobStates.DRAFT} → {new_status}")
         click.echo(f"   📊 Queue position: {jobs_index['queue'].index(final_job_id)}")

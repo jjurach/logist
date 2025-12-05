@@ -35,7 +35,7 @@ The **Steward** represents human intervention points in the workflow. When a job
 ## Execution Philosophy
 
 ### Job Isolation (Safety First)
-Every job begins by creating a complete, isolated Git environment to ensure that the main project repository remains untouched during an agent's work. This is achieved by cloning the main repository into a temporary directory (`<job_root>/work/<timestamp>`).
+Every job begins by creating a complete, isolated Git environment to ensure that the main project repository remains untouched during an agent's work. This is achieved by cloning the main repository into an isolated workspace directory (`<job_dir>/workspace/`).
 
 This isolated environment serves as a staging area where "coder" agents can perform their work, including making a series of local Git commits with descriptive messages.
 
@@ -43,6 +43,22 @@ Key components of this strategy include:
 - **Baseline Hash**: The commit hash of the original repository at the moment of cloning. This provides a clean starting point and allows for easy rollbacks.
 - **Local Commits**: Agents are expected to commit their changes within the isolated clone. This preserves a detailed history of the work performed.
 - **Future Integration**: While currently the isolated clone is left in place, the long-term vision is to use these agent-generated commits to create a patch file or to propose a merge back into the main repository, subject to human (Steward) approval.
+
+#### Workspace Creation Timing
+Job workspaces are created **lazily** during execution commands to avoid unnecessary resource usage:
+
+**Commands that Create Workspaces:**
+- `logist job step [JOB_ID]` - Creates workspace for single-step execution
+- `logist job run [JOB_ID]` - Creates workspace for continuous execution
+- `logist job rerun [JOB_ID]` - Creates workspace for job restart
+- `logist job restep [JOB_ID]` - Creates workspace for checkpoint restoration
+- `logist job activate [JOB_ID]` *(planned)* - Will create workspace immediately upon job activation
+
+**How Workspace Creation Works:**
+1. The `workspace_utils.setup_isolated_workspace()` function clones the current Git repository HEAD into `<job_dir>/workspace/`
+2. If `attachments/` directory exists, contents are copied to `workspace/attachments/`
+3. The workspace is now ready for Cline CLI execution with proper file isolation
+4. Workspaces are automatically cleaned up based on policies (successful jobs after 1 day, failed after 7 days, etc.)
 
 ### Iterative Loop Structure
 The Logist enforces a strict three-phase execution loop:
