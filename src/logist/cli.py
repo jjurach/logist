@@ -229,9 +229,10 @@ def select_job(ctx, job_id: str):
 @click.option("--acceptance", help="Set the acceptance criteria")
 @click.option("--prompt", help="Set the task prompt description")
 @click.option("--files", help="Set relevant files (comma-separated)")
+@click.option("--rank", type=int, help="Set the execution queue position (0=front, -1=end)")
 @click.pass_context
-def config_job(ctx, job_id: str | None, objective: str, details: str, acceptance: str, prompt: str, files: str):
-    """Configure a DRAFT job with properties before activation."""
+def config_job(ctx, job_id: str | None, objective: str, details: str, acceptance: str, prompt: str, files: str, rank: int):
+    """Configure a DRAFT job with properties or manage execution queue position."""
     click.echo("⚙️  Executing 'logist job config'")
 
     # Get job ID
@@ -243,9 +244,78 @@ def config_job(ctx, job_id: str | None, objective: str, details: str, acceptance
     if not job_dir:
         raise click.ClickException(f"❌ Job '{final_job_id}' not found.")
 
+    # Handle --rank option (queue management)
+    if rank is not None:
+        # Validate rank value
+        if rank < -1:
+            raise click.ClickException("❌ Rank must be >= -1 (-1 moves to end, 0 moves to front)")
+
+        # Check that no other config options are provided with --rank
+        if any([objective, details, acceptance, prompt, files]):
+            raise click.ClickException("❌ --rank cannot be used with other configuration options")
+
+        # Check job state - can rank jobs that are either DRAFT or activated (in queue)
+        try:
+            manifest = load_job_manifest(job_dir)
+            current_status = manifest.get("status")
+            # Allow ranking for jobs in any state as long as they're in the queue
+        except JobStateError as e:
+            raise click.ClickException(f"❌ Error loading job manifest: {e}")
+
+        # Load jobs index and check queue
+        jobs_dir_path = ctx.obj["JOBS_DIR"]
+        jobs_index_path = os.path.join(jobs_dir_path, "jobs_index.json")
+
+        try:
+            with open(jobs_index_path, 'r') as f:
+                jobs_index = json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            raise click.ClickException(f"❌ Failed to read jobs index: {e}")
+
+        queue = jobs_index.get("queue", [])
+        if final_job_id not in queue:
+            raise click.ClickException(f"❌ Job '{final_job_id}' is not in the execution queue. Use 'logist job activate' first.")
+
+        # Get current position for feedback
+        current_position = queue.index(final_job_id)
+
+        # Remove from current position
+        queue.remove(final_job_id)
+
+        # Insert at new position
+        if rank == -1 or rank >= len(queue):
+            # Move to end
+            queue.append(final_job_id)
+            new_position = len(queue) - 1
+        else:
+            # Insert at specified position, but not beyond end
+            actual_rank = min(rank, len(queue))
+            queue.insert(actual_rank, final_job_id)
+            new_position = actual_rank
+
+        # Save updated jobs index
+        try:
+            with open(jobs_index_path, 'w') as f:
+                json.dump(jobs_index, f, indent=2)
+        except OSError as e:
+            raise click.ClickException(f"❌ Failed to update jobs index: {e}")
+
+        click.secho(f"   ✅ Job '{final_job_id}' queue position updated successfully!", fg="green")
+        click.echo(f"   📊 Moved from position {current_position} to position {new_position}")
+
+        # Show current queue state
+        click.echo("   📋 Current queue:")
+        for i, queue_job_id in enumerate(queue):
+            marker = " ←" if queue_job_id == final_job_id else ""
+            next_indicator = " 🏃" if i == 0 else ""
+            click.echo(f"      {i}: {queue_job_id}{marker}{next_indicator}")
+
+        return
+
+    # Handle configuration options (original functionality)
     # Validate that at least one option is provided
     if not any([objective, details, acceptance, prompt, files]):
-        raise click.ClickException("❌ At least one configuration option must be provided (--objective, --details, --acceptance, --prompt, or --files)")
+        raise click.ClickException("❌ At least one configuration option must be provided (--objective, --details, --acceptance, --prompt, --files, or --rank)")
 
     # Check job state - must be DRAFT to configure
     try:
