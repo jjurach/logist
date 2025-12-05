@@ -75,15 +75,17 @@ def init_command(jobs_dir: str) -> bool:
             except Exception as e:
                 click.secho(f"⚠️  Warning: Unexpected error copying '{role_file}': {e}", fg="yellow")
 
-        # Load default roles configuration and generate individual JSON files
-        roles_config_path = os.path.join(os.path.dirname(__file__), '..', '..', 'config', 'default-roles.json')
+        # Load default roles configuration from package resources
         roles_copied_count = 0
         try:
-            with open(roles_config_path, 'r') as f:
+            resource_file = importlib_resources.files('logist') / 'schemas' / 'roles' / 'default-roles.json'
+            with resource_file.open('r', encoding='utf-8') as f:
                 default_roles = json.load(f)
-        except (json.JSONDecodeError, OSError) as e:
-            click.secho(f"⚠️  Warning: Failed to load default roles config: {e}", fg="yellow")
-            default_roles = None
+        except (FileNotFoundError, IOError, json.JSONDecodeError) as e:
+            # This should never happen in a properly installed package
+            click.secho(f"❌ Error: Failed to load default roles resource: {e}", fg="red")
+            click.secho("   This indicates a package installation problem.", fg="red")
+            return False
 
         # Generate individual role JSON files and MD files (only for roles not copied from schemas)
         if default_roles and "roles" in default_roles:

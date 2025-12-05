@@ -55,60 +55,6 @@ class TestInitRoles:
         assert (jobs_dir / "supervisor.md").exists(), "supervisor.md should still be created"
         assert (jobs_dir / "system.md").exists(), "system.md should still be created"
 
-    def test_init_handles_missing_default_roles_file(self, tmp_path, monkeypatch):
-        """Test that init handles missing default-roles.json gracefully."""
-        jobs_dir = tmp_path / "test_jobs"
-
-        # Mock the path to a non-existent file
-        original_join = os.path.join
-        def mock_join(*args):
-            if len(args) >= 4 and args[-1] == 'default-roles.json':
-                return str(tmp_path / "nonexistent.json")
-            return original_join(*args)
-
-        monkeypatch.setattr(os.path, "join", mock_join)
-
-        # Should still succeed but log warnings
-        success = init_command(str(jobs_dir))
-
-        assert success, "init_command should succeed even with missing default-roles.json"
-
-        # .md files should still be created
-        assert (jobs_dir / "worker.md").exists(), "worker.md should still be created"
-        assert (jobs_dir / "supervisor.md").exists(), "supervisor.md should still be created"
-
-        # .json files should not be created (since source is missing)
-        assert not (jobs_dir / "worker.json").exists(), "worker.json should not be created when source missing"
-        assert not (jobs_dir / "supervisor.json").exists(), "supervisor.json should not be created when source missing"
-
-    def test_init_handles_malformed_default_roles_file(self, tmp_path, monkeypatch):
-        """Test that init handles malformed default-roles.json gracefully."""
-        jobs_dir = tmp_path / "test_jobs"
-
-        # Create a temporary malformed JSON file
-        malformed_file = tmp_path / "malformed.json"
-        malformed_file.write_text('{"roles": {"Worker": {invalid json}')
-
-        original_join = os.path.join
-        def mock_join(*args):
-            if len(args) >= 4 and args[-1] == 'default-roles.json':
-                return str(malformed_file)
-            return original_join(*args)
-
-        monkeypatch.setattr(os.path, "join", mock_join)
-
-        # Should still succeed but log warnings
-        success = init_command(str(jobs_dir))
-
-        assert success, "init_command should succeed even with malformed default-roles.json"
-
-        # .md files should still be created
-        assert (jobs_dir / "worker.md").exists(), "worker.md should still be created"
-        assert (jobs_dir / "supervisor.md").exists(), "supervisor.md should still be created"
-
-        # .json files should not be created (since source is malformed)
-        assert not (jobs_dir / "worker.json").exists(), "worker.json should not be created when source malformed"
-        assert not (jobs_dir / "supervisor.json").exists(), "supervisor.json should not be created when source malformed"
 
 
 class TestInitIntegration:
