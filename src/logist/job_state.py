@@ -13,8 +13,21 @@ class JobStates:
     # Initial state - job is configured but not yet activated for execution
     DRAFT = "DRAFT"
 
-    # Ready for execution - job can be run
+    # Ready for execution - job is waiting to run
     PENDING = "PENDING"
+
+    # Core execution states
+    RUNNING = "RUNNING"
+    PAUSED = "PAUSED"
+    SUCCESS = "SUCCESS"
+    CANCELED = "CANCELED"
+    FAILED = "FAILED"  # Deprecated but kept for compatibility
+
+    # Command-driven intervention states
+    REVIEW_REQUIRED = "REVIEW_REQUIRED"
+    REVIEWING = "REVIEWING"
+    APPROVAL_REQUIRED = "APPROVAL_REQUIRED"
+    INTERVENTION_REQUIRED = "INTERVENTION_REQUIRED"
 
 def load_job_manifest(job_dir: str) -> Dict[str, Any]:
     """
@@ -101,18 +114,18 @@ def transition_state(current_status: str, agent_role: str, response_action: str)
         (JobStates.DRAFT, "System", "ACTIVATED"): JobStates.PENDING,
 
         # PENDING and execution transitions
-        (JobStates.PENDING, "Worker", "COMPLETED"): "RUNNING",  # Should actually go to REVIEW_REQUIRED after worker
-        ("RUNNING", "Worker", "COMPLETED"): "REVIEW_REQUIRED",
-        ("RUNNING", "Worker", "STUCK"): "INTERVENTION_REQUIRED",
-        ("RUNNING", "Worker", "RETRY"): JobStates.PENDING,
+        (JobStates.PENDING, "Worker", "COMPLETED"): JobStates.RUNNING,  # Should actually go to REVIEW_REQUIRED after worker
+        (JobStates.RUNNING, "Worker", "COMPLETED"): JobStates.REVIEW_REQUIRED,
+        (JobStates.RUNNING, "Worker", "STUCK"): JobStates.INTERVENTION_REQUIRED,
+        (JobStates.RUNNING, "Worker", "RETRY"): JobStates.PENDING,
 
-        ("REVIEW_REQUIRED", "Supervisor", "COMPLETED"): "APPROVAL_REQUIRED",
-        ("REVIEW_REQUIRED", "Supervisor", "STUCK"): "INTERVENTION_REQUIRED",
-        ("REVIEW_REQUIRED", "Supervisor", "RETRY"): "REVIEW_REQUIRED",
+        (JobStates.REVIEW_REQUIRED, "Supervisor", "COMPLETED"): JobStates.APPROVAL_REQUIRED,
+        (JobStates.REVIEW_REQUIRED, "Supervisor", "STUCK"): JobStates.INTERVENTION_REQUIRED,
+        (JobStates.REVIEW_REQUIRED, "Supervisor", "RETRY"): JobStates.REVIEW_REQUIRED,
 
-        ("REVIEWING", "Supervisor", "COMPLETED"): "APPROVAL_REQUIRED",
-        ("REVIEWING", "Supervisor", "STUCK"): "INTERVENTION_REQUIRED",
-        ("REVIEWING", "Supervisor", "RETRY"): "REVIEW_REQUIRED",
+        (JobStates.REVIEWING, "Supervisor", "COMPLETED"): JobStates.APPROVAL_REQUIRED,
+        (JobStates.REVIEWING, "Supervisor", "STUCK"): JobStates.INTERVENTION_REQUIRED,
+        (JobStates.REVIEWING, "Supervisor", "RETRY"): JobStates.REVIEW_REQUIRED,
     }
 
     key = (current_status, agent_role, response_action)

@@ -85,8 +85,8 @@ Sets a job as the currently selected one, allowing you to run subsequent command
     logist job select my-other-job
     ```
 
-### `logist job config [JOB_ID] --objective TEXT --details TEXT --acceptance TEXT --prompt TEXT --files FILELIST`
-Configures a DRAFT job with properties before activation. Only works on jobs in DRAFT state.
+### `logist job config [JOB_ID] --objective TEXT --details TEXT --acceptance TEXT --prompt TEXT --files FILELIST --status STATUS --rank NUMBER`
+Configures a DRAFT job with properties before activation, or manages job status and queue position. Only works on jobs in DRAFT state for configuration options.
 
 -   **Arguments**:
     -   `[JOB_ID]` (optional): The identifier of the job to configure. Defaults to currently selected job.
@@ -96,8 +96,14 @@ Configures a DRAFT job with properties before activation. Only works on jobs in 
     -   `--acceptance TEXT`: Set criteria for considering the job complete
     -   `--prompt TEXT`: Set the main task prompt/description
     -   `--files FILELIST`: Set relevant files (comma-separated list)
+    -   `--status STATUS`: Set the job status to a new value (cannot be used with other config options)
+    -   `--rank NUMBER`: Set the execution queue position (0=front, -1=end; cannot be used with other config options)
 -   **Requirement**: At least one option must be provided
--   **State Restriction**: Job must be in DRAFT state to configure
+-   **Status Values**: DRAFT, PENDING, RUNNING, REVIEW_REQUIRED, REVIEWING, APPROVAL_REQUIRED, INTERVENTION_REQUIRED, SUCCESS, CANCELED
+-   **State Restriction**: Job must be in appropriate state depending on operation:
+    -   Configuration options (--objective, --details, etc.): Job must be in DRAFT state
+    -   Status updates (--status): Can update jobs in any state
+    -   Queue management (--rank): Job must be in execution queue
 -   **Example**:
     ```bash
     # Configure a new job with all properties

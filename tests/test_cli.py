@@ -470,6 +470,188 @@ class TestJobChatCommand:
         assert "❌ Could not find job directory for 'nonexistent-job'" in result.output
 
 
+class TestJobConfigStatus:
+    """Test the --status option in logist job config command."""
+
+    def setup_method(self):
+        """Setup CLI runner."""
+        self.runner = CliRunner()
+
+    def test_job_config_status_valid_pending(self, tmp_path):
+        """Test setting job status to PENDING successfully."""
+        jobs_dir = tmp_path / "jobs"
+        jobs_dir.mkdir()
+
+        # Initialize jobs directory and create a job
+        self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "init"])
+        job_dir = tmp_path / "test-job"
+        job_dir.mkdir()
+        self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "job", "create", str(job_dir)])
+
+        # Update job to have an initial status (PENDING)
+        manifest_path = job_dir / "job_manifest.json"
+        with open(manifest_path, 'r') as f:
+            manifest = json.load(f)
+        manifest["status"] = "PENDING"
+        with open(manifest_path, 'w') as f:
+            json.dump(manifest, f)
+
+        # Set status to RUNNING
+        result = self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "job", "config", "test-job", "--status", "RUNNING"])
+        assert result.exit_code == 0
+        assert "✅ Job 'test-job' status updated successfully!" in result.output
+        assert "Status changed: PENDING → RUNNING" in result.output
+
+        # Verify the status was updated
+        with open(manifest_path, 'r') as f:
+            manifest = json.load(f)
+        assert manifest["status"] == "RUNNING"
+
+    def test_job_config_status_invalid_status(self, tmp_path):
+        """Test that invalid status values are rejected with helpful error message."""
+        jobs_dir = tmp_path / "jobs"
+        jobs_dir.mkdir()
+
+        # Initialize jobs directory and create a job
+        self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "init"])
+        job_dir = tmp_path / "test-job"
+        job_dir.mkdir()
+        self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "job", "create", str(job_dir)])
+
+        # Try to set invalid status
+        result = self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "job", "config", "test-job", "--status", "INVALID_STATUS"])
+        assert result.exit_code == 0  # Click handles errors gracefully
+        assert "❌ Invalid status 'INVALID_STATUS'" in result.output
+        assert "Valid status values are: 'DRAFT', 'PENDING', 'RUNNING', 'REVIEW_REQUIRED', 'REVIEWING', 'APPROVAL_REQUIRED', 'INTERVENTION_REQUIRED', 'SUCCESS', 'CANCELED'" in result.output
+
+    def test_job_config_status_no_change_when_same(self, tmp_path):
+        """Test that setting status to the same value doesn't report an error."""
+        jobs_dir = tmp_path / "jobs"
+        jobs_dir.mkdir()
+
+        # Initialize jobs directory and create a job
+        self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "init"])
+        job_dir = tmp_path / "test-job"
+        job_dir.mkdir()
+        self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "job", "create", str(job_dir)])
+
+        # Set initial status to PENDING
+        manifest_path = job_dir / "job_manifest.json"
+        with open(manifest_path, 'r') as f:
+            manifest = json.load(f)
+        manifest["status"] = "PENDING"
+        with open(manifest_path, 'w') as f:
+            json.dump(manifest, f)
+
+        # Try to set status to PENDING again
+        result = self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "job", "config", "test-job", "--status", "PENDING"])
+        assert result.exit_code == 0
+        assert "Job 'test-job' already has status 'PENDING' - no change needed" in result.output
+
+    def test_job_config_status_mutual_exclusion(self, tmp_path):
+        """Test that --status cannot be used with other config options."""
+        jobs_dir = tmp_path / "jobs"
+        jobs_dir.mkdir()
+
+        # Initialize jobs directory and create a DRAFT job
+        self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "init"])
+        job_dir = tmp_path / "test-job"
+        job_dir.mkdir()
+        self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "job", "create", str(job_dir)])
+
+        # Try to use --status with --objective (should fail)
+        result = self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "job", "config", "test-job", "--status", "PENDING", "--objective", "Test objective"])
+        assert result.exit_code == 0  # Handled gracefully
+        assert "❌ --status cannot be used with other configuration options" in result.output
+
+    def test_job_config_status_all_valid_values(self, tmp_path):
+        """Test all valid status values can be set."""
+        jobs_dir = tmp_path / "jobs"
+        jobs_dir.mkdir()
+
+        # Initialize jobs directory and create a job
+        self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "init"])
+        job_dir = tmp_path / "test-job"
+        job_dir.mkdir()
+        self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "job", "create", str(job_dir)])
+
+        valid_statuses = ["DRAFT", "PENDING", "RUNNING", "REVIEW_REQUIRED", "REVIEWING", "APPROVAL_REQUIRED", "INTERVENTION_REQUIRED", "SUCCESS", "CANCELED"]
+        manifest_path = job_dir / "job_manifest.json"
+
+        for status in valid_statuses:
+            # Set status
+            result = self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "job", "config", "test-job", "--status", status])
+
+            # For statuses other than DRAFT, it should work (assuming we set a different initial status)
+            if status != "DRAFT":
+                # First set to PENDING to allow transitions
+                with open(manifest_path, 'r') as f:
+                    manifest = json.load(f)
+                manifest["status"] = "PENDING"
+                with open(manifest_path, 'w') as f:
+                    json.dump(manifest, f)
+
+                result = self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "job", "config", "test-job", "--status", status])
+                assert result.exit_code == 0
+                if status != "PENDING":  # Skip the no-change case
+                    assert "status updated successfully" in result.output
+
+                # Verify the status was set (for non transition-failing cases)
+                with open(manifest_path, 'r') as f:
+                    manifest = json.load(f)
+                # Just check that the command ran without error for now
+                # More sophisticated transition testing would require mocking the transition logic
+
+    def test_job_config_no_options_error_includes_status(self, tmp_path):
+        """Test that the 'no options provided' error message includes --status."""
+        jobs_dir = tmp_path / "jobs"
+        jobs_dir.mkdir()
+
+        # Initialize jobs directory and create a DRAFT job
+        self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "init"])
+        job_dir = tmp_path / "test-job"
+        job_dir.mkdir()
+        self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "job", "create", str(job_dir)])
+
+        # Run config command with no options
+        result = self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "job", "config", "test-job"])
+        assert result.exit_code == 0  # Handled gracefully
+        assert "❌ At least one configuration option must be provided" in result.output
+        assert "--status" in result.output  # Should include --status in the list of valid options
+
+    def test_job_config_status_with_job_id_from_env(self, tmp_path, monkeypatch):
+        """Test --status works when job_id comes from environment variable."""
+        jobs_dir = tmp_path / "jobs"
+        jobs_dir.mkdir()
+
+        # Initialize jobs directory and create a job
+        self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "init"])
+        job_dir = tmp_path / "test-job"
+        job_dir.mkdir()
+        self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "job", "create", str(job_dir)])
+
+        # Set job as current and put in env
+        monkeypatch.setenv("LOGIST_JOB_ID", "test-job")
+
+        # Update to PENDING first
+        manifest_path = job_dir / "job_manifest.json"
+        with open(manifest_path, 'r') as f:
+            manifest = json.load(f)
+        manifest["status"] = "PENDING"
+        with open(manifest_path, 'w') as f:
+            json.dump(manifest, f)
+
+        # Set status without providing job_id (should use env)
+        result = self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "job", "config", "--status", "RUNNING"])
+        assert result.exit_code == 0
+        assert "✅ Job 'test-job' status updated successfully!" in result.output
+
+        # Verify the status was updated
+        with open(manifest_path, 'r') as f:
+            manifest = json.load(f)
+        assert manifest["status"] == "RUNNING"
+
+
 class TestRerunCommand:
     """Test the job rerun command functionality."""
 

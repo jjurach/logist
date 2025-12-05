@@ -232,8 +232,9 @@ def select_job(ctx, job_id: str):
 @click.option("--prompt", help="Set the task prompt description")
 @click.option("--files", help="Set relevant files (comma-separated)")
 @click.option("--rank", type=int, help="Set the execution queue position (0=front, -1=end)")
+@click.option("--status", help="Set the job status to a new value")
 @click.pass_context
-def config_job(ctx, job_id: str | None, objective: str, details: str, acceptance: str, prompt: str, files: str, rank: int):
+def config_job(ctx, job_id: str | None, objective: str, details: str, acceptance: str, prompt: str, files: str, rank: int, status: str):
     """Configure a DRAFT job with properties or manage execution queue position."""
     click.echo("⚙️  Executing 'logist job config'")
 
@@ -314,10 +315,58 @@ def config_job(ctx, job_id: str | None, objective: str, details: str, acceptance
 
         return
 
+    # Handle --status option (status update)
+    if status is not None:
+        # Check that no other config options are provided with --status
+        if any([objective, details, acceptance, prompt, files, rank]):
+            raise click.ClickException("❌ --status cannot be used with other configuration options (--objective, --details, --acceptance, --prompt, --files, or --rank)")
+
+        # Define valid job states
+        valid_states = [
+            JobStates.DRAFT,
+            JobStates.PENDING,
+            JobStates.RUNNING,
+            JobStates.REVIEW_REQUIRED,
+            JobStates.REVIEWING,
+            JobStates.APPROVAL_REQUIRED,
+            JobStates.INTERVENTION_REQUIRED,
+            JobStates.SUCCESS,
+            JobStates.CANCELED
+        ]
+
+        # Validate status value
+        if status not in valid_states:
+            valid_states_str = ", ".join(f"'{s}'" for s in valid_states)
+            raise click.ClickException(f"❌ Invalid status '{status}'. Valid status values are: {valid_states_str}")
+
+        # Load current job manifest to get current status for transition validation
+        try:
+            manifest = load_job_manifest(job_dir)
+            current_status = manifest.get("status", "UNKNOWN")
+        except JobStateError as e:
+            raise click.ClickException(f"❌ Error loading job manifest: {e}")
+
+        # Simple transition validation - for now, allow most transitions
+        # (More sophisticated validation could be added based on state machine rules)
+        if current_status == status:
+            click.echo(f"   ℹ️  Job '{final_job_id}' already has status '{status}' - no change needed")
+            return
+
+        # Update job manifest with new status
+        try:
+            # Use update_job_manifest to safely update the status
+            update_job_manifest(job_dir=job_dir, new_status=status)
+            click.secho(f"   ✅ Job '{final_job_id}' status updated successfully!", fg="green")
+            click.echo(f"   🔄 Status changed: {current_status} → {status}")
+        except JobStateError as e:
+            raise click.ClickException(f"❌ Failed to update job status: {e}")
+
+        return
+
     # Handle configuration options (original functionality)
     # Validate that at least one option is provided
-    if not any([objective, details, acceptance, prompt, files]):
-        raise click.ClickException("❌ At least one configuration option must be provided (--objective, --details, --acceptance, --prompt, --files, or --rank)")
+    if not any([objective, details, acceptance, prompt, files, rank, status]):
+        raise click.ClickException("❌ At least one configuration option must be provided (--objective, --details, --acceptance, --prompt, --files, --status, or --rank)")
 
     # Check job state - must be DRAFT to configure
     try:
