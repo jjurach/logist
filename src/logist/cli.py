@@ -176,13 +176,8 @@ def get_job_dir(ctx, job_id: str) -> str | None:
     is_flag=True,
     help="Enable debug output for detailed operation logging.",
 )
-@click.option(
-    "--enhance",
-    is_flag=True,
-    help="Enable enhanced context assembly for agent prompts.",
-)
 @click.pass_context
-def main(ctx, jobs_dir, debug, enhance):
+def main(ctx, enhance, jobs_dir, debug):
     """Logist - Sophisticated Agent Orchestration."""
     ctx.ensure_object(dict)
     ctx.obj["JOBS_DIR"] = jobs_dir
