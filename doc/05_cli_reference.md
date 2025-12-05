@@ -13,6 +13,13 @@ Specifies the root directory where the `jobs_index.json` file and all individual
 -   **Environment Variable**: `LOGIST_JOBS_DIR` can be set to override the default
 -   **Development**: For development, you can use a local directory, e.g., `logist --jobs-dir ./jobs job list`.
 
+### `--enhance`
+Controls the level of context provided to language models during job execution. When this flag is present, all available context information is included (job manifest, history, workspace details, role instructions, metrics). When absent, only minimal context with file references and attachments is provided.
+
+-   **Type**: Boolean flag (present/absent)
+-   **Default**: Absent (minimal context)
+-   **Example**: `logist --enhance job step` (includes full context for LLM execution)
+
 ### Environment Variables
 
 **LOGIST_JOBS_DIR**
