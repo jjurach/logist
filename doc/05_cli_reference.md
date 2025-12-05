@@ -61,6 +61,18 @@ Displays the installed version of Logist.
 ### `logist --help`
 Shows a help message for the main `logist` command, listing all available command groups.
 
+### `logist init`
+Initializes the jobs directory with default configurations and role files. This sets up the jobs system for the first time.
+
+-   Creates the jobs directory structure if it doesn't exist
+-   Creates `jobs_index.json` to track active jobs
+-   Copies both `.json` and `.md` role configuration files (worker.json, worker.md, supervisor.json, supervisor.md, system.md) from package defaults
+-   **Warning**: Will warn before reinitializing an already initialized directory
+-   **Example**:
+    ```bash
+    logist init
+    ```
+
 ---
 
 ## Job Management (`logist job`)
