@@ -231,7 +231,20 @@ class LogistEngine:
             context = assemble_job_context(job_dir, manifest, ctx.obj["JOBS_DIR"], active_role, enhance=ctx.obj.get("ENHANCE", False))
             context = enhance_context_with_previous_outcome(context, job_dir)
 
-            # 8. Execute LLM with Cline using discovered file arguments
+            # 8. Copy prompt.md to workspace/tmp/ for Apply command
+            import shutil
+            prompt_file_src = os.path.join(job_dir, "prompt.md")
+            tmp_dir = os.path.join(workspace_dir, "tmp")
+            os.makedirs(tmp_dir, exist_ok=True)
+            prompt_file_dst = os.path.join(tmp_dir, f"prompt-{job_id}.md")
+
+            if os.path.exists(prompt_file_src):
+                shutil.copy2(prompt_file_src, prompt_file_dst)
+                print(f"   📋 Copied prompt.md to workspace/tmp/prompt-{job_id}.md")
+            else:
+                print(f"   ⚠️  Warning: prompt.md not found at {prompt_file_src}")
+
+            # 9. Execute LLM with Cline using discovered file arguments
             file_arguments = prep_result["file_arguments"] + outcome_prep["attachments_added"] if prep_result["success"] else []
 
             processed_response, execution_time = execute_llm_with_cline(
