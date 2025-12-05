@@ -1,0 +1,12 @@
+fix: automatically remove jobs from queue when reaching terminal states
+
+- Add queue cleanup logic to update_job_manifest() to remove jobs from queue
+  when status transitions to SUCCESS or CANCELED (terminal states)
+- Modify list_jobs() to automatically clean up queue discrepancies before 
+  displaying results by removing any jobs with terminal status
+- Ensures manual status changes via 'logist job config --status SUCCESS'
+  properly remove jobs from execution queue
+- Prevents jobs in SUCCESS status from appearing in 'logist job list' output
+
+Fixes issue where jobs with SUCCESS status remained in execution queue,
+causing them to appear in 'logist task list' output despite being terminal states.

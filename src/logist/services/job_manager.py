@@ -195,6 +195,46 @@ class JobManagerService:
             jobs_map = jobs_index.get("jobs", {})
             queue = jobs_index.get("queue", [])
 
+            # Clean up queue: remove jobs that have terminal status (shouldn't be in queue)
+            terminal_states = {"SUCCESS", "CANCELED"}
+            cleaned_queue = []
+            queue_modified = False
+
+            for job_id in queue:
+                job_path = jobs_map.get(job_id)
+                if job_path:
+                    job_manifest_path = os.path.join(job_path, "job_manifest.json")
+                    try:
+                        if os.path.exists(job_manifest_path):
+                            with open(job_manifest_path, 'r') as f:
+                                manifest = json.load(f)
+                            status = manifest.get("status", "UNKNOWN")
+                            if status not in terminal_states:
+                                cleaned_queue.append(job_id)
+                            else:
+                                # Job is in terminal state, remove from queue
+                                queue_modified = True
+                        else:
+                            # Manifest doesn't exist, keep in queue (assume it's valid)
+                            cleaned_queue.append(job_id)
+                    except (json.JSONDecodeError, OSError):
+                        # Manifest corrupted, keep in queue for now
+                        cleaned_queue.append(job_id)
+                else:
+                    # Job path not found, keep in queue for now
+                    cleaned_queue.append(job_id)
+
+            # Update queue if modifications were made
+            if queue_modified:
+                jobs_index["queue"] = cleaned_queue
+                try:
+                    with open(jobs_index_path, 'w') as f:
+                        json.dump(jobs_index, f, indent=2)
+                    queue = cleaned_queue  # Use cleaned queue for processing
+                except OSError:
+                    # Failed to save cleanup, continue with original queue
+                    pass
+
             # Create queue position mapping
             queue_positions = {}
             for idx, job_id in enumerate(queue):

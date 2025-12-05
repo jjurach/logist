@@ -331,6 +331,30 @@ def update_job_manifest(
         except OSError as e:
             raise JobStateError(f"Failed to write updated manifest to {manifest_path}: {e}")
 
+    # Queue cleanup: remove jobs from queue when transitioning to terminal states
+    if new_status is not None and new_status in [JobStates.SUCCESS, JobStates.CANCELED]:
+        try:
+            job_id = manifest.get("job_id")
+            if job_id:
+                # Determine jobs directory from job_dir path
+                jobs_dir = os.path.dirname(job_dir)
+                jobs_index_path = os.path.join(jobs_dir, "jobs_index.json")
+
+                if os.path.exists(jobs_index_path):
+                    with open(jobs_index_path, 'r') as f:
+                        jobs_index = json.load(f)
+
+                    queue = jobs_index.get("queue", [])
+                    if job_id in queue:
+                        queue.remove(job_id)
+                        # Save updated jobs index
+                        with open(jobs_index_path, 'w') as f:
+                            json.dump(jobs_index, f, indent=2)
+        except Exception as e:
+            # Queue cleanup is best-effort; don't fail the status update if cleanup fails
+            import sys
+            print(f"Warning: Failed to remove job '{job_id or 'unknown'}' from queue during terminal state transition: {e}", file=sys.stderr)
+
     # Cleanup logic: trigger workspace cleanup when transitioning to terminal states
     if new_status is not None and modified:
         terminal_states = {"SUCCESS", "CANCELED"}
