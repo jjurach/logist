@@ -319,7 +319,8 @@ def config_job(ctx, job_id: str | None, objective: str, details: str, acceptance
     if status is not None:
         # Check that no other config options are provided with --status
         if any([objective, details, acceptance, prompt, files, rank]):
-            raise click.ClickException("❌ --status cannot be used with other configuration options (--objective, --details, --acceptance, --prompt, --files, or --rank)")
+            click.echo("❌ --status cannot be used with other configuration options (--objective, --details, --acceptance, --prompt, --files, or --rank)")
+            return
 
         # Define valid job states
         valid_states = [
@@ -337,7 +338,8 @@ def config_job(ctx, job_id: str | None, objective: str, details: str, acceptance
         # Validate status value
         if status not in valid_states:
             valid_states_str = ", ".join(f"'{s}'" for s in valid_states)
-            raise click.ClickException(f"❌ Invalid status '{status}'. Valid status values are: {valid_states_str}")
+            click.echo(f"❌ Invalid status '{status}'. Valid status values are: {valid_states_str}")
+            return
 
         # Load current job manifest to get current status for transition validation
         try:
@@ -366,7 +368,8 @@ def config_job(ctx, job_id: str | None, objective: str, details: str, acceptance
     # Handle configuration options (original functionality)
     # Validate that at least one option is provided
     if not any([objective, details, acceptance, prompt, files, rank, status]):
-        raise click.ClickException("❌ At least one configuration option must be provided (--objective, --details, --acceptance, --prompt, --files, --status, or --rank)")
+        click.echo("❌ At least one configuration option must be provided (--objective, --details, --acceptance, --prompt, --files, --status, or --rank)")
+        return
 
     # Check job state - must be DRAFT to configure
     try:
