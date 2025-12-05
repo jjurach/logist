@@ -124,7 +124,7 @@ logist/tests/
     └── test_role_manager.py
 ```
 
-**Current Status**: 62 tests passing, 24 failing (72% success rate). Most failures are due to CLI output format changes rather than fundamental bugs.
+**Current Status**: 87 tests passing, 5 skipped (94.6% success rate). All tests are currently passing with high test coverage.
 
 #### Advanced Testing
 
