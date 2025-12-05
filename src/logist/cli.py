@@ -1011,6 +1011,11 @@ def get_job_dir(ctx, job_id: str) -> str | None:
 
 
 @click.group()
+@click.option(
+    "--enhance",
+    is_flag=True,
+    help="Include full, enhanced context for LLM executions (job manifest, history, workspace details, role instructions, metrics). When absent, only file references and attachments are included."
+)
 @click.version_option(version="0.1.0", prog_name="logist")
 @click.option(
     "--jobs-dir",
