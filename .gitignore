@@ -82,6 +82,8 @@ test*.txt
 *.out
 .git_commit_message*
 .checklist*
+.review*
+.summary*
 /jobs
 /logist
 /pulumi-demo
