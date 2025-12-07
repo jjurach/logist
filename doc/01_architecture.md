@@ -35,14 +35,23 @@ The **Steward** represents human intervention points in the workflow. When a job
 ## Execution Philosophy
 
 ### Job Isolation (Safety First)
-Every job begins by creating a complete, isolated Git environment to ensure that the main project repository remains untouched during an agent's work. This is achieved by cloning the main repository into an isolated workspace directory (`<job_dir>/workspace/`).
+Every job begins by creating a complete, isolated Git environment to ensure that the main project repository remains untouched during an agent's work. This is achieved through a sophisticated git worktree, branch, and bare repository setup that provides robust isolation while maintaining seamless git operations.
+
+#### Advanced Isolation Architecture
+The isolation system uses:
+- **Job-Specific Branches**: Each job creates a dedicated branch (e.g., `job-{job_id}`) from the specified base branch
+- **Bare Repository (`target.git`)**: A minimal bare repository clone containing all git history for the job branch
+- **Symlinked Worktree**: The workspace directory uses a symlinked `.git` file pointing to the bare repository, enabling transparent git operations within the workspace
+- **Automatic Setup**: The prepare-python-project.sh script is automatically executed if available to ensure the workspace is properly initialized
 
 This isolated environment serves as a staging area where "coder" agents can perform their work, including making a series of local Git commits with descriptive messages.
 
 Key components of this strategy include:
-- **Baseline Hash**: The commit hash of the original repository at the moment of cloning. This provides a clean starting point and allows for easy rollbacks.
-- **Local Commits**: Agents are expected to commit their changes within the isolated clone. This preserves a detailed history of the work performed.
-- **Future Integration**: While currently the isolated clone is left in place, the long-term vision is to use these agent-generated commits to create a patch file or to propose a merge back into the main repository, subject to human (Steward) approval.
+- **Baseline Hash**: The commit hash of the original repository at the moment the job branch is created, providing a clean rollback point
+- **Local Commits**: Agents commit their changes within the isolated worktree, preserving detailed history specific to the job
+- **Branch Isolation**: Each job operates in its own branch, preventing conflicts between concurrent jobs
+- **Transparent Git Operations**: All git commands work seamlessly through the symlinked `.git` due to proper GIT_DIR and GIT_WORK_TREE environment configuration
+- **Future Integration**: The job branches provide a foundation for future patch file generation or merge proposals back into the main repository, subject to human (Steward) approval
 
 #### Workspace Creation Timing
 Job workspaces are created **lazily** during execution commands to avoid unnecessary resource usage:
@@ -55,10 +64,13 @@ Job workspaces are created **lazily** during execution commands to avoid unneces
 - `logist job activate [JOB_ID]` *(planned)* - Will create workspace immediately upon job activation
 
 **How Workspace Creation Works:**
-1. The `workspace_utils.setup_isolated_workspace()` function clones the current Git repository HEAD into `<job_dir>/workspace/`
-2. If `attachments/` directory exists, contents are copied to `workspace/attachments/`
-3. The workspace is now ready for Cline CLI execution with proper file isolation
-4. Workspaces are automatically cleaned up based on policies (successful jobs after 1 day, failed after 7 days, etc.)
+1. The `workspace_utils.setup_isolated_workspace()` function creates a job-specific branch from the base branch
+2. A bare repository clone (`target.git`) is created for the job branch to store git history
+3. Git worktree adds a detached worktree, then adjusts `.git` to symlink to `../target.git`
+4. The `prepare-python-project.sh` script is automatically executed if available to prepare the workspace
+5. If `attachments/` directory exists, contents are copied to `workspace/attachments/`
+6. The workspace is now ready for Cline CLI execution with transparent git operations through the symlinked `.git`
+7. Workspaces are automatically cleaned up based on policies (successful jobs after 1 day, failed after 7 days, etc.), removing both `workspace/` and `target.git/`
 
 ### Iterative Loop Structure
 The Logist enforces a strict three-phase execution loop:
