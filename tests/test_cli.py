@@ -44,9 +44,19 @@ class TestCLICommands:
 
     def test_job_create_command(self, tmp_path):
         """Test job create command with a directory."""
+        # Create temporary jobs directory to isolate the test and override any ambient LOGIST_JOBS_DIR
+        jobs_dir = tmp_path / "jobs"
+        jobs_dir.mkdir()
+
+        # Initialize the temporary jobs directory
+        result = self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "init"])
+        assert result.exit_code == 0
+
+        # Create job directory (outside jobs_dir to test the warning functionality)
         job_dir = tmp_path / "new-job"
         job_dir.mkdir()
-        result = self.runner.invoke(main, ["job", "create", str(job_dir)])
+
+        result = self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "job", "create", str(job_dir)])
         assert result.exit_code == 0
         assert "⚠️  Warning: The job directory" in result.output  # Warning about creating outside jobs_dir
         assert "🎯 Job 'new-job' created/updated and selected" in result.output
