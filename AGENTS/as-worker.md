@@ -12,11 +12,12 @@ items to the end of your .checklist.md
     to doc/todo.md to reflect this.
 
 [ ] commit your doc changes
-[ ] create .summary.md to summarize these changes you made. be sure to include
+
+[ ] create .summary.json to summarize these changes you made in JSON format. be sure to include
     todo items for subtests which could not be completed.
 
 [ ] run AGENTS/prepare-python-project.sh one more time in order to:
     - see that all tests succeed
     - see that all files are committed
 
-[ ] in the final completion_result message, echo the contents of .summary.md
+In the final completion_result message, you must print the contents of .summary.json in JSON format
