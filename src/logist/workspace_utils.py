@@ -21,14 +21,21 @@ def find_git_root(cwd=None):
 def verify_workspace_exists(job_dir: str) -> bool:
     """Verifies if the isolated workspace directory exists and is a git repository."""
     workspace_dir = os.path.join(job_dir, "workspace")
-    workspace_git_dir = os.path.join(workspace_dir, ".git")
-    
+    target_git_dir = os.path.join(job_dir, "target.git")
+    workspace_git_link = os.path.join(workspace_dir, ".git")
+
     if not os.path.isdir(workspace_dir):
         return False
-    
-    if not os.path.isdir(workspace_git_dir):
+
+    # Check for target.git directory (bare repo)
+    if not os.path.isdir(target_git_dir):
         return False
-        
+
+    # Check for symlinked .git pointing to target.git
+    if not (os.path.islink(workspace_git_link) and
+            os.readlink(workspace_git_link) == "../target.git"):
+        return False
+
     return True
 
 def get_workspace_files_summary(job_dir: str) -> Dict[str, Any]:
@@ -95,10 +102,16 @@ def get_workspace_git_status(job_dir: str) -> Dict[str, Any]:
     git_status["is_git_repo"] = True
 
     try:
+        # Set up environment for git commands with symlinked repo
+        env = os.environ.copy()
+        env["GIT_DIR"] = os.path.join(job_dir, "target.git")
+        env["GIT_WORK_TREE"] = workspace_dir
+
         # Current branch
         result = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
             cwd=workspace_dir,
+            env=env,
             capture_output=True,
             text=True,
             check=True
@@ -109,6 +122,7 @@ def get_workspace_git_status(job_dir: str) -> Dict[str, Any]:
         result = subprocess.run(
             ["git", "status", "--porcelain"],
             cwd=workspace_dir,
+            env=env,
             capture_output=True,
             text=True,
             check=True
@@ -127,6 +141,7 @@ def get_workspace_git_status(job_dir: str) -> Dict[str, Any]:
         result = subprocess.run(
             ["git", "log", "-5", "--pretty=format:%h - %an, %ar : %s"], # Last 5 commits
             cwd=workspace_dir,
+            env=env,
             capture_output=True,
             text=True,
             check=True
@@ -181,10 +196,25 @@ def perform_git_commit(
         return result
 
     try:
+        # Set up environment for git commands with symlinked repo
+        env = os.environ.copy()
+        env["GIT_DIR"] = os.path.join(job_dir, "target.git")
+        env["GIT_WORK_TREE"] = workspace_dir
+
+        # Add author info if provided
+        if author_info:
+            if "name" in author_info:
+                env["GIT_AUTHOR_NAME"] = author_info["name"]
+                env["GIT_COMMITTER_NAME"] = author_info["name"]
+            if "email" in author_info:
+                env["GIT_AUTHOR_EMAIL"] = author_info["email"]
+                env["GIT_COMMITTER_EMAIL"] = author_info["email"]
+
         # Check for changes first
         status_result = subprocess.run(
             ["git", "status", "--porcelain"],
             cwd=workspace_dir,
+            env=env,
             capture_output=True,
             text=True,
             check=True
@@ -202,6 +232,7 @@ def perform_git_commit(
                     subprocess.run(
                         ["git", "add", file],
                         cwd=workspace_dir,
+                        env=env,
                         capture_output=True,
                         text=True,
                         check=False  # Don't fail if file doesn't exist
@@ -213,6 +244,7 @@ def perform_git_commit(
         subprocess.run(
             ["git", "add", "."],
             cwd=workspace_dir,
+            env=env,
             capture_output=True,
             text=True,
             check=True
@@ -220,16 +252,6 @@ def perform_git_commit(
 
         # Prepare commit message
         commit_message = f"feat: job execution - {summary}"
-
-        # Add author info if provided
-        env = os.environ.copy()
-        if author_info:
-            if "name" in author_info:
-                env["GIT_AUTHOR_NAME"] = author_info["name"]
-                env["GIT_COMMITTER_NAME"] = author_info["name"]
-            if "email" in author_info:
-                env["GIT_AUTHOR_EMAIL"] = author_info["email"]
-                env["GIT_COMMITTER_EMAIL"] = author_info["email"]
 
         # Commit
         commit_result = subprocess.run(
@@ -245,6 +267,7 @@ def perform_git_commit(
         hash_result = subprocess.run(
             ["git", "rev-parse", "HEAD"],
             cwd=workspace_dir,
+            env=env,
             capture_output=True,
             text=True,
             check=True
@@ -258,6 +281,7 @@ def perform_git_commit(
             show_result = subprocess.run(
                 ["git", "show", "--name-only", "--pretty=format:"],
                 cwd=workspace_dir,
+                env=env,
                 capture_output=True,
                 text=True,
                 check=True
@@ -275,9 +299,15 @@ def perform_git_commit(
     return result
 
 
-def create_job_branch(job_id: str, job_dir: str, base_branch: str = "main") -> Dict[str, Any]:
+
+
+
+def setup_isolated_workspace(job_id: str, job_dir: str, base_branch: str = "main") -> Dict[str, Any]:
     """
-    Creates an isolated Git branch for a job to prevent conflicts between workspaces.
+    Sets up workspace by creating job branch and worktree with symlinked .git.
+
+    Creates job-specific branch in main repo, clones to target.git, and sets up
+    workspace as a git worktree with prepare-python-project.sh execution.
 
     Args:
         job_id: Unique job identifier
@@ -285,97 +315,14 @@ def create_job_branch(job_id: str, job_dir: str, base_branch: str = "main") -> D
         base_branch: Base branch to branch from (default: main)
 
     Returns:
-        Dict with creation status and branch information
-    """
-    workspace_dir = os.path.join(job_dir, "workspace")
-    result = {
-        "success": False,
-        "branch_name": f"logist/job/{job_id}",
-        "base_branch": base_branch,
-        "error": None
-    }
-
-    if not verify_workspace_exists(job_dir):
-        result["error"] = "Workspace not initialized"
-        return result
-
-    try:
-        # Check if branch already exists
-        branch_result = subprocess.run(
-            ["git", "branch", "--list", result["branch_name"]],
-            cwd=workspace_dir,
-            capture_output=True,
-            text=True,
-            check=True
-        )
-
-        if result["branch_name"] in branch_result.stdout:
-            # Branch exists, just switch to it
-            subprocess.run(
-                ["git", "checkout", result["branch_name"]],
-                cwd=workspace_dir,
-                check=True,
-                capture_output=True,
-                text=True
-            )
-            result["success"] = True
-            return result
-
-        # Switch to base branch first
-        subprocess.run(
-            ["git", "checkout", base_branch],
-            cwd=workspace_dir,
-            check=True,
-            capture_output=True,
-            text=True
-        )
-
-        # Pull latest changes
-        subprocess.run(
-            ["git", "pull", "origin", base_branch],
-            cwd=workspace_dir,
-            check=True,
-            capture_output=True,
-            text=True
-        )
-
-        # Create and switch to new branch
-        subprocess.run(
-            ["git", "checkout", "-b", result["branch_name"]],
-            cwd=workspace_dir,
-            check=True,
-            capture_output=True,
-            text=True
-        )
-
-        result["success"] = True
-
-    except subprocess.CalledProcessError as e:
-        result["error"] = f"Git branch operation failed: {e.stderr}"
-    except Exception as e:
-        result["error"] = f"Unexpected error: {str(e)}"
-
-    return result
-
-
-def setup_isolated_workspace(job_id: str, job_dir: str, base_branch: str = "main") -> Dict[str, Any]:
-    """
-    Sets up workspace by cloning latest git HEAD and copying attachments.
-
-    This provides clean workspace setup for batch execution with proper file handling.
-
-    Args:
-        job_id: Unique job identifier
-        job_dir: Job directory path
-        base_branch: Base branch (unused, now clones current HEAD)
-
-    Returns:
         Dict with setup status and workspace information
     """
     result = {
         "success": False,
         "workspace_prepared": False,
+        "target_repo_created": False,
         "attachments_copied": False,
+        "prepare_script_run": False,
         "error": None
     }
 
@@ -386,29 +333,121 @@ def setup_isolated_workspace(job_id: str, job_dir: str, base_branch: str = "main
             return result
 
         workspace_dir = os.path.join(job_dir, "workspace")
+        target_git_dir = os.path.join(job_dir, "target.git")
         attachments_dir = os.path.join(job_dir, "attachments")
+        job_branch_name = f"job-{job_id}"
 
-        # Always create fresh workspace directory for clean state
+        # Always create fresh workspace and target directories for clean state
         if os.path.exists(workspace_dir):
             shutil.rmtree(workspace_dir)
+        if os.path.exists(target_git_dir):
+            shutil.rmtree(target_git_dir)
 
+        # 1. Create job-specific branch in main repository
+        try:
+            # Check if branch already exists
+            branch_check = subprocess.run(
+                ["git", "branch", "--list", job_branch_name],
+                cwd=git_root,
+                capture_output=True,
+                text=True,
+                check=True
+            )
+
+            if job_branch_name not in branch_check.stdout:
+                # Create new branch from base_branch
+                subprocess.run(
+                    ["git", "checkout", "-b", job_branch_name, base_branch],
+                    cwd=git_root,
+                    check=True,
+                    capture_output=True,
+                    text=True
+                )
+            else:
+                # Branch exists, just switch to it
+                subprocess.run(
+                    ["git", "checkout", job_branch_name],
+                    cwd=git_root,
+                    check=True,
+                    capture_output=True,
+                    text=True
+                )
+        except subprocess.CalledProcessError as e:
+            result["error"] = f"Failed to create/switch to job branch: {e.stderr}"
+            return result
+
+        # 2. Clone job branch to target.git as bare repository
+        try:
+            subprocess.run(
+                ["git", "clone", "--bare", "--branch", job_branch_name, git_root, "target.git"],
+                cwd=job_dir,
+                check=True,
+                capture_output=True,
+                text=True
+            )
+            result["target_repo_created"] = True
+        except subprocess.CalledProcessError as e:
+            result["error"] = f"Failed to clone job branch to target.git: {e.stderr}"
+            return result
+
+        # 3. Create workspace directory and set up git worktree
         os.makedirs(workspace_dir, exist_ok=True)
 
-        # Clone repository at current HEAD
-        subprocess.run(
-            ["git", "clone", git_root, "workspace"],
-            cwd=job_dir,
-            check=True,
-            capture_output=True,
-            text=True
-        )
+        try:
+            # Use git worktree add to create a proper worktree, then adjust .git linkage
+            # First, add the worktree
+            subprocess.run(
+                ["git", "worktree", "add", "--detach", workspace_dir, job_branch_name],
+                cwd=git_root,
+                check=True,
+                capture_output=True,
+                text=True
+            )
 
-        result["workspace_prepared"] = True
+            # Now adjust the .git directory to point to our target.git
+            workspace_git_link = os.path.join(workspace_dir, ".git")
+            if os.path.exists(workspace_git_link):
+                # Remove the auto-generated .git file/dir and replace with symlink to target.git
+                if os.path.isdir(workspace_git_link):
+                    shutil.rmtree(workspace_git_link)
+                elif os.path.isfile(workspace_git_link):
+                    os.remove(workspace_git_link)
+                elif os.path.islink(workspace_git_link):
+                    os.remove(workspace_git_link)
 
-        # Copy attachments if they exist
+            # Create symlink to our target.git
+            os.symlink("../target.git", workspace_git_link)
+
+            result["workspace_prepared"] = True
+        except (OSError, subprocess.CalledProcessError) as e:
+            result["error"] = f"Failed to set up workspace git worktree: {str(e)}"
+            return result
+
+        # 4. Run prepare-python-project.sh if it exists
+        prepare_script = os.path.join(git_root, "AGENTS", "prepare-python-project.sh")
+        if os.path.exists(prepare_script):
+            try:
+                subprocess.run(
+                    [prepare_script],
+                    cwd=workspace_dir,
+                    check=False,  # Don't fail if prepare script has issues
+                    capture_output=True,
+                    text=True
+                )
+                result["prepare_script_run"] = True
+            except Exception as e:
+                # Prepare script failure shouldn't block workspace creation
+                pass
+
+        # 5. Copy attachments if they exist
         if os.path.exists(attachments_dir) and os.listdir(attachments_dir):
-            shutil.copytree(attachments_dir, os.path.join(workspace_dir, "attachments"))
-            result["attachments_copied"] = True
+            try:
+                attachments_dest = os.path.join(workspace_dir, "attachments")
+                shutil.copytree(attachments_dir, attachments_dest)
+                result["attachments_copied"] = True
+            except Exception as e:
+                # Attachment copy failure shouldn't block workspace creation
+                pass
 
         result["success"] = True
 
@@ -456,10 +495,16 @@ def get_workspace_lifecycle_status(job_dir: str) -> Dict[str, Any]:
     # Check git status
     if verify_workspace_exists(job_dir):
         try:
+            # Set up environment for git commands with symlinked repo
+            env = os.environ.copy()
+            env["GIT_DIR"] = os.path.join(job_dir, "target.git")
+            env["GIT_WORK_TREE"] = workspace_dir
+
             # Get current branch
             branch_result = subprocess.run(
                 ["git", "rev-parse", "--abbrev-ref", "HEAD"],
                 cwd=workspace_dir,
+                env=env,
                 capture_output=True,
                 text=True,
                 check=True
@@ -470,6 +515,7 @@ def get_workspace_lifecycle_status(job_dir: str) -> Dict[str, Any]:
             status_result = subprocess.run(
                 ["git", "status", "--porcelain"],
                 cwd=workspace_dir,
+                env=env,
                 capture_output=True,
                 text=True,
                 check=True
@@ -680,10 +726,16 @@ def cleanup_completed_workspaces(jobs_dir: str, cleanup_policies: Optional[Dict[
                         result["errors"].append(f"Backup failed for {job_path}: {backup_result['error']}")
                         continue  # Skip cleanup if backup failed
 
-                    # Cleanup workspace
+                    # Cleanup workspace and target.git
                     workspace_dir = os.path.join(job_path, "workspace")
+                    target_git_dir = os.path.join(job_path, "target.git")
                     try:
-                        shutil.rmtree(workspace_dir)
+                        # Clean up both workspace directory and target.git repo
+                        if os.path.exists(workspace_dir):
+                            shutil.rmtree(workspace_dir)
+                        if os.path.exists(target_git_dir):
+                            shutil.rmtree(target_git_dir)
+
                         result["workspaces_cleaned"].append({
                             "job_path": job_path,
                             "reason": reason,
