@@ -343,7 +343,7 @@ def setup_isolated_workspace(job_id: str, job_dir: str, base_branch: str = "main
         if os.path.exists(target_git_dir):
             shutil.rmtree(target_git_dir)
 
-        # 1. Create job-specific branch in main repository
+        # 1. Create job-specific branch in main repository (without switching main repo)
         try:
             # Check if branch already exists
             branch_check = subprocess.run(
@@ -355,25 +355,16 @@ def setup_isolated_workspace(job_id: str, job_dir: str, base_branch: str = "main
             )
 
             if job_branch_name not in branch_check.stdout:
-                # Create new branch from base_branch
+                # Create new branch from base_branch without switching
                 subprocess.run(
-                    ["git", "checkout", "-b", job_branch_name, base_branch],
-                    cwd=git_root,
-                    check=True,
-                    capture_output=True,
-                    text=True
-                )
-            else:
-                # Branch exists, just switch to it
-                subprocess.run(
-                    ["git", "checkout", job_branch_name],
+                    ["git", "branch", job_branch_name, base_branch],
                     cwd=git_root,
                     check=True,
                     capture_output=True,
                     text=True
                 )
         except subprocess.CalledProcessError as e:
-            result["error"] = f"Failed to create/switch to job branch: {e.stderr}"
+            result["error"] = f"Failed to create job branch: {e.stderr}"
             return result
 
         # 2. Clone job branch to target.git as bare repository
@@ -394,6 +385,24 @@ def setup_isolated_workspace(job_id: str, job_dir: str, base_branch: str = "main
         os.makedirs(workspace_dir, exist_ok=True)
 
         try:
+            # Check if workspace already exists as a worktree and remove it
+            worktree_check = subprocess.run(
+                ["git", "worktree", "list", "--porcelain"],
+                cwd=git_root,
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            if workspace_dir in worktree_check.stdout:
+                # Remove existing worktree if it exists
+                subprocess.run(
+                    ["git", "worktree", "remove", "--force", workspace_dir],
+                    cwd=git_root,
+                    capture_output=True,
+                    text=True,
+                    check=False  # Don't fail if worktree doesn't exist
+                )
+
             # Use git worktree add to create a proper worktree, then adjust .git linkage
             # First, add the worktree
             subprocess.run(
