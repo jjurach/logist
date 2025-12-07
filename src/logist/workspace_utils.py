@@ -332,6 +332,10 @@ def setup_isolated_workspace(job_id: str, job_dir: str, base_branch: str = "main
             result["error"] = "Not in a Git repository"
             return result
 
+        # Change to git root directory for all git operations
+        original_cwd = os.getcwd()
+        os.chdir(git_root)
+
         workspace_dir = os.path.join(job_dir, "workspace")
         target_git_dir = os.path.join(job_dir, "target.git")
         attachments_dir = os.path.join(job_dir, "attachments")
@@ -464,6 +468,12 @@ def setup_isolated_workspace(job_id: str, job_dir: str, base_branch: str = "main
         result["error"] = f"Git operation failed: {e.stderr}"
     except Exception as e:
         result["error"] = f"Unexpected error: {str(e)}"
+    finally:
+        # Always restore original working directory
+        try:
+            os.chdir(original_cwd)
+        except:
+            pass
 
     return result
 
