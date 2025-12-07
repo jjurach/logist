@@ -100,9 +100,23 @@ class TestCLICommands:
             jobs_index = json.load(f)
         assert jobs_index["current_job_id"] == "my-job"
 
-    def test_command_uses_current_job(self):
+    def test_command_uses_current_job(self, tmp_path):
         """Test that a command uses the current job if no ID is given."""
-        result = self.runner.invoke(main, ["job", "status"])
+        jobs_dir = tmp_path / "jobs"
+        jobs_dir.mkdir()
+
+        # Initialize jobs directory
+        result = self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "init"])
+        assert result.exit_code == 0
+
+        # Create a job (this sets it as current)
+        job_dir = tmp_path / "test-job"
+        job_dir.mkdir()
+        result = self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "job", "create", str(job_dir)])
+        assert result.exit_code == 0
+
+        # Now test that status uses the current job
+        result = self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "job", "status"])
         assert result.exit_code == 0
         assert "No job ID provided. Using current job from index:" in result.output
         assert "Status: DRAFT" in result.output  # Default status for new jobs
