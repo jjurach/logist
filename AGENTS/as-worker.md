@@ -20,4 +20,7 @@ items to the end of your .checklist.md
     - see that all tests succeed
     - see that all files are committed
 
-In the final completion_result message, you must print the contents of .summary.json in JSON format
+[ ] As the final step after I check the final box (if necessary), I will:
+    - re-read AGENTS/as-a-worker.md for these final instructions
+    - re-read the generated .summary.md
+    - Output the final completion message in JSON format as my final completion_result
