@@ -67,12 +67,13 @@ Job workspaces are created **lazily** during execution commands to avoid unneces
 1. **Validation**: `setup_isolated_workspace()` first validates if existing `target.git` and `workspace` are present and correctly configured for the job branch
 2. **Reuse**: If valid existing setups exist, they are reused to avoid unnecessary work and preserve uncommitted changes
 3. **Creation**: If validation fails or no existing setup exists:
-   - A job-specific branch is created from the base branch
-   - A bare repository clone (`target.git`) is created for the job branch to store git history
-   - Git worktree adds a detached worktree, then adjusts `.git` to symlink to `../target.git`
+   - A job-specific branch is created (or recreated) from the base branch
+   - A bare repository clone (`target.git`) is created using `git clone --bare --branch job-{id} $(pwd) target.git`
+   - A remote is added and the branch is pushed to the bare repository
+   - A git worktree is created from the bare repository using `git --git-dir target.git worktree add workspace`
 4. The `prepare-python-project.sh` script is automatically executed if available to prepare the workspace
 5. If `attachments/` directory exists, contents are copied to `workspace/attachments/`
-6. The workspace is now ready for Cline CLI execution with transparent git operations through the symlinked `.git`
+6. The workspace is now ready for Cline CLI execution
 7. Workspaces are automatically cleaned up based on policies (successful jobs after 1 day, failed after 7 days, etc.), removing both `workspace/` and `target.git/`
 
 ### Iterative Loop Structure
