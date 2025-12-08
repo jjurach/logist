@@ -569,8 +569,11 @@ def rerun(ctx, job_id: str, step: int | None):
     try:
         # Execute the rerun logic
         engine.rerun_job(ctx, job_id, job_dir, start_step=step)
+    except ValueError as e:
+        raise click.ClickException(f"❌ {e}")
     except Exception as e:
         click.secho(f"❌ Error during job rerun: {e}", fg="red")
+        raise click.ClickException(f"Job rerun failed: {e}")
 
 
 @job.command(name="restep")

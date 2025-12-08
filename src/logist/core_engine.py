@@ -101,20 +101,37 @@ class LogistEngine:
 
     def rerun_job(self, ctx: any, job_id: str, job_dir: str, start_step: int | None = None, dry_run: bool = False) -> None:
         """Re-execute a job, optionally starting from a specific phase."""
+        debug_mode = ctx.obj.get("DEBUG", False) if ctx and ctx.obj else False
+
+        if debug_mode:
+            print(f"   🔧 [DEBUG] Entering rerun_job with job_id='{job_id}', start_step={start_step}, dry_run={dry_run}")
+            print("   🔧 [DEBUG] Loading necessary imports..."
         # Import services dynamically to avoid circular imports
         from .services import JobManagerService
         manager = JobManagerService()
+
+        if debug_mode:
+            print("   🔧 [DEBUG] Setting up workspace..."
         manager.setup_workspace(job_dir) # Ensure workspace is ready
+        if debug_mode:
+            print("   🔧 [DEBUG] Workspace setup completed")
 
         try:
+            if debug_mode:
+                print("   🔧 [DEBUG] Loading and validating job manifest..."
             # 1. Load and validate job manifest
             manifest = load_job_manifest(job_dir)
+            if debug_mode:
+                print(f"   🔧 [DEBUG] Manifest loaded: status='{manifest.get('status')}', current_phase='{manifest.get('current_phase')}'")
 
             # 2. Determine available phases
             phases = manifest.get("phases", [])
             if not phases:
                 print("⚠️  Job has no defined phases. Treating as single-phase job.")
                 phases = [{"name": "default", "description": "Default single phase"}]
+
+            if debug_mode:
+                print(f"   🔧 [DEBUG] Found {len(phases)} phases: {[p.get('name', 'unnamed') for p in phases]}")
 
             # 3. Validate start_step if provided
             if start_step is not None:
@@ -129,12 +146,21 @@ class LogistEngine:
                 start_phase_name = phases[0]["name"]
                 print("   → Starting rerun from the beginning (phase 0)")
 
+            if debug_mode:
+                print(f"   🔧 [DEBUG] Target start phase: '{start_phase_name}'")
+
             # 4. Reset job state for rerun
+            if debug_mode:
+                print("   🔧 [DEBUG] Resetting job state for rerun..."
             self._reset_job_for_rerun(job_dir, start_phase_name, new_run=True)
+            if debug_mode:
+                print("   🔧 [DEBUG] Job state reset completed")
 
             print(f"   🔄 Job '{job_id}' reset for rerun")
 
             # 5. Continue with normal execution until completion or intervention
+            if debug_mode:
+                print("   🔧 [DEBUG] Initiating job phase execution..."
             # For now, execute one step (matching the pattern of other commands)
             # Future enhancement could implement continuous rerun until completion
             success = manager.run_job_phase(ctx, job_id, job_dir, dry_run=False)
@@ -145,7 +171,14 @@ class LogistEngine:
             if not success:
                 print(f"   ⚠️  Initial step failed - use 'logist job step' to retry")
 
+            if debug_mode:
+                print(f"   🔧 [DEBUG] rerun_job completed: success={success}")
+
         except Exception as e:
+            if debug_mode:
+                print(f"   🔧 [DEBUG] Exception caught in rerun_job: {type(e).__name__}: {e}")
+                import traceback
+                print(f"   🔧 [DEBUG] Traceback: {traceback.format_exc()}")
             print(f"❌ Error during job rerun preparation: {e}")
             raise
 

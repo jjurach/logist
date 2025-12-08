@@ -115,24 +115,6 @@ def execute_llm_with_cline(
     start_time = time.time()
 
     try:
-        # TEMPORARY: Simulate an error for testing purposes
-        # raise JobProcessorError("Simulated CLINE execution failure for testing.")
-        # To test subprocess failure:
-        # process = subprocess.run(
-        #     ["false"], # command that always fails
-        #     cwd=cwd_dir,
-        #     capture_output=True,
-        #     text=True,
-        #     timeout=timeout,
-        #     check=True # this makes it raise CalledProcessError
-        # )
-        # To test invalid JSON:
-        # with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
-        #     f.write("THIS IS NOT JSON")
-        #     prompt_file = f.name
-        #     cmd = ["cat", prompt_file] # command that outputs non-json
-        #     process = subprocess.run(cmd, capture_output=True, text=True)
-
 
         # Format the context as a human-readable prompt
         from logist.job_context import format_llm_prompt
@@ -168,8 +150,6 @@ def execute_llm_with_cline(
                 "summary_for_supervisor": "Dry run execution",
                 "metrics": {},
             }, 0.0
-
-        raise JobProcessorError("Simulated CLINE execution failure for testing.")
 
         # Execute CLINE
         process = subprocess.run(
