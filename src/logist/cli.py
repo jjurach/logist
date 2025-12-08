@@ -542,40 +542,6 @@ def step(ctx, job_id: str | None, dry_run: bool, model: str):
         click.secho("❌ No job ID provided and no current job is selected.", fg="red")
 
 
-@job.command(name="rerun")
-@click.argument("job_id")
-@click.option(
-    "--step",
-    type=int,
-    default=None,
-    help="Zero-indexed phase number to start rerunning from. If not specified, starts from the beginning."
-)
-@click.pass_context
-def rerun(ctx, job_id: str, step: int | None):
-    """Re-execute a previously completed job, or resume from a specific step."""
-    click.echo("🔄 Executing 'logist job rerun'")
-
-    # Get job directory
-    job_dir = get_job_dir(ctx, job_id)
-    if job_dir is None:
-        click.secho(f"❌ Job '{job_id}' not found.", fg="red")
-        return
-
-    # Validate step number if provided
-    if step is not None and step < 0:
-        click.secho("❌ Step number must be a non-negative integer.", fg="red")
-        return
-
-    try:
-        # Execute the rerun logic
-        engine.rerun_job(ctx, job_id, job_dir, start_step=step)
-    except ValueError as e:
-        click.secho(f"❌ {e}", fg="red")
-        return
-    except Exception as e:
-        click.secho(f"❌ Error during job rerun: {e}", fg="red")
-        return
-
 
 @job.command(name="restep")
 @click.argument("job_id", required=False)
