@@ -17,6 +17,11 @@ from logist.cli import (
 )
 import shutil # Needed for cleaning up directories
 
+# Debug control for tests that call subprocesses
+DEBUG_TESTS = True
+
+import click
+
 
 
 
@@ -49,14 +54,20 @@ class TestCLICommands:
         jobs_dir.mkdir()
 
         # Initialize the temporary jobs directory
-        result = self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "init"])
+        init_args = ["--jobs-dir", str(jobs_dir), "init"]
+        if DEBUG_TESTS:
+            init_args.insert(0, "--debug")
+        result = self.runner.invoke(main, init_args)
         assert result.exit_code == 0
 
         # Create job directory (outside jobs_dir to test the warning functionality)
         job_dir = tmp_path / "new-job"
         job_dir.mkdir()
 
-        result = self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "job", "create", str(job_dir)])
+        create_args = ["--jobs-dir", str(jobs_dir), "job", "create", str(job_dir)]
+        if DEBUG_TESTS:
+            create_args.insert(0, "--debug")
+        result = self.runner.invoke(main, create_args)
         assert result.exit_code == 0
         assert "⚠️  Warning: The job directory" in result.output  # Warning about creating outside jobs_dir
         assert "🎯 Job 'new-job' created/updated and selected" in result.output

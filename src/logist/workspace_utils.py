@@ -5,6 +5,8 @@ import re
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 
+import click
+
 def find_git_root(cwd=None):
     """Find the root directory of the Git repository from the current working directory."""
     if cwd is None:
@@ -302,7 +304,7 @@ def perform_git_commit(
 
 
 
-def setup_isolated_workspace(job_id: str, job_dir: str, base_branch: str = "main") -> Dict[str, Any]:
+def setup_isolated_workspace(job_id: str, job_dir: str, base_branch: str = "main", debug: bool = False) -> Dict[str, Any]:
     """
     Sets up workspace by creating job branch and worktree with symlinked .git.
 
@@ -350,6 +352,8 @@ def setup_isolated_workspace(job_id: str, job_dir: str, base_branch: str = "main
         # 1. Read the previous branch (current branch in main repo) before creating job branch
         previous_branch = None
         try:
+            if debug:
+                click.echo(f"   🔧 [DEBUG] Running: git rev-parse --abbrev-ref HEAD (cwd: {git_root})")
             branch_result = subprocess.run(
                 ["git", "rev-parse", "--abbrev-ref", "HEAD"],
                 cwd=git_root,
