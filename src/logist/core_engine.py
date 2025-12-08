@@ -16,6 +16,7 @@ from logist.job_processor import (
     save_latest_outcome, prepare_outcome_for_attachments, enhance_context_with_previous_outcome
 )
 from logist.job_context import assemble_job_context, JobContextError
+from logist.services import JobManagerService
 
 
 class LogistEngine:
@@ -99,26 +100,17 @@ class LogistEngine:
             if len(evidence_files) > 3:
                 print(f"         ... and {len(evidence_files) - 3} more")
 
-    def rerun_job(self, ctx: any, job_id: str, job_dir: str, start_step: int | None = None, dry_run: bool = False) -> None:
+    def rerun_job(self, ctx: Any, job_id: str, job_dir: str, start_step: int | None = None, dry_run: bool = False) -> None:
         """Re-execute a job, optionally starting from a specific phase."""
         debug_mode = ctx.obj.get("DEBUG", False) if ctx and ctx.obj else False
 
         if debug_mode:
             print(f"   🔧 [DEBUG] Entering rerun_job with job_id='{job_id}', start_step={start_step}, dry_run={dry_run}")
-            print("   🔧 [DEBUG] Loading necessary imports..."
-        # Import services dynamically to avoid circular imports
-        from .services import JobManagerService
-        manager = JobManagerService()
-
-        if debug_mode:
-            print("   🔧 [DEBUG] Setting up workspace..."
-        manager.setup_workspace(job_dir) # Ensure workspace is ready
-        if debug_mode:
-            print("   🔧 [DEBUG] Workspace setup completed")
+            print("   🔧 [DEBUG] Loading necessary imports...")
 
         try:
             if debug_mode:
-                print("   🔧 [DEBUG] Loading and validating job manifest..."
+                print("   🔧 [DEBUG] Loading and validating job manifest...")
             # 1. Load and validate job manifest
             manifest = load_job_manifest(job_dir)
             if debug_mode:
@@ -149,18 +141,28 @@ class LogistEngine:
             if debug_mode:
                 print(f"   🔧 [DEBUG] Target start phase: '{start_phase_name}'")
 
-            # 4. Reset job state for rerun
+            # 4. Setup workspace ONLY after validation succeeds
             if debug_mode:
-                print("   🔧 [DEBUG] Resetting job state for rerun..."
+                print("   🔧 [DEBUG] Setting up workspace...")
+            # Import services dynamically to avoid circular imports
+            # from .services import JobManagerService
+            manager = JobManagerService()
+            manager.setup_workspace(job_dir) # Ensure workspace is ready
+            if debug_mode:
+                print("   🔧 [DEBUG] Workspace setup completed")
+
+            # 5. Reset job state for rerun
+            if debug_mode:
+                print("   🔧 [DEBUG] Resetting job state for rerun...")
             self._reset_job_for_rerun(job_dir, start_phase_name, new_run=True)
             if debug_mode:
                 print("   🔧 [DEBUG] Job state reset completed")
 
             print(f"   🔄 Job '{job_id}' reset for rerun")
 
-            # 5. Continue with normal execution until completion or intervention
+            # 6. Continue with normal execution until completion or intervention
             if debug_mode:
-                print("   🔧 [DEBUG] Initiating job phase execution..."
+                print("   🔧 [DEBUG] Initiating job phase execution...")
             # For now, execute one step (matching the pattern of other commands)
             # Future enhancement could implement continuous rerun until completion
             success = manager.run_job_phase(ctx, job_id, job_dir, dry_run=False)
@@ -212,10 +214,10 @@ class LogistEngine:
         with open(manifest_path, 'w') as f:
             json.dump(manifest, f, indent=2)
 
-    def step_job(self, ctx: any, job_id: str, job_dir: str, dry_run: bool = False, model: str = "grok-code-fast-1") -> bool:
+    def step_job(self, ctx: Any, job_id: str, job_dir: str, dry_run: bool = False, model: str = "grok-code-fast-1") -> bool:
         """Execute single phase of job and pause with enhanced workspace preparation."""
         # Import services dynamically to avoid circular imports
-        from .services import JobManagerService
+        # from .services import JobManagerService
         manager = JobManagerService()
         manager.setup_workspace(job_dir) # Ensure workspace is ready
 
@@ -387,7 +389,7 @@ class LogistEngine:
             handle_execution_error(job_dir, job_id, e, raw_output=raw_cline_output)
             return False
 
-    def run_job(self, ctx: any, job_id: str, job_dir: str) -> bool:
+    def run_job(self, ctx: Any, job_id: str, job_dir: str) -> bool:
         """
         Execute a job continuously until completion, intervention, or cancellation.
 
@@ -395,7 +397,7 @@ class LogistEngine:
         until the job reaches SUCCESS, CANCELED, INTERVENTION_REQUIRED, or APPROVAL_REQUIRED.
         """
         # Import services dynamically to avoid circular imports
-        from .services import JobManagerService
+        # from .services import JobManagerService
         manager = JobManagerService()
         manager.setup_workspace(job_dir)  # Ensure workspace is ready
 
@@ -490,10 +492,10 @@ class LogistEngine:
             print(f"❌ Error during job run for '{job_id}': {e}")
             return False
 
-    def restep_single_step(self, ctx: any, job_id: str, job_dir: str, step_number: int, dry_run: bool = False) -> bool:
+    def restep_single_step(self, ctx: Any, job_id: str, job_dir: str, step_number: int, dry_run: bool = False) -> bool:
         """Re-execute a specific single step (phase) of a job for debugging purposes."""
         # Import services dynamically to avoid circular imports
-        from .services import JobManagerService
+        # from .services import JobManagerService
         manager = JobManagerService()
         manager.setup_workspace(job_dir) # Ensure workspace is ready
 
@@ -592,7 +594,7 @@ class LogistEngine:
             handle_execution_error(job_dir, job_id, e, raw_output=raw_cline_output)
             return False
 
-    def restep_job(self, ctx: any, job_id: str, job_dir: str, step_number: int, dry_run: bool = False) -> bool:
+    def restep_job(self, ctx: Any, job_id: str, job_dir: str, step_number: int, dry_run: bool = False) -> bool:
         """
         Rewind job execution to a previous checkpoint within the current run.
 
