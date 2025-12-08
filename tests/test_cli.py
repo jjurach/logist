@@ -730,10 +730,34 @@ class TestRerunCommand:
         assert result.exit_code == 0  # Handled gracefully
         assert "❌ Step number must be a non-negative integer" in result.output
 
-    def test_rerun_job_from_start(self, tmp_path):
+    def test_rerun_job_from_start(self, tmp_path, monkeypatch):
         """Test rerunning a job from the beginning (no --step specified)."""
         jobs_dir = tmp_path / "jobs"
         jobs_dir.mkdir()
+
+        # Mock LLM execution to avoid actual Cline calls
+        def mock_execute_llm(*args, **kwargs):
+            return {
+                "action": "COMPLETED",
+                "evidence_files": [],
+                "summary_for_supervisor": "Mock rerun step execution",
+                "processed_at": "2025-01-01T00:00:00",
+                "metrics": {"cost_usd": 0.1, "duration_seconds": 1.0},
+                "cline_task_id": "mock-task-123"
+            }, 1.0
+
+        # Mock workspace setup to avoid git operations
+        def mock_setup_workspace(*args, **kwargs):
+            return {
+                "success": True,
+                "workspace_prepared": True,
+                "target_repo_created": True,
+                "attachments_copied": False,
+                "prepare_script_run": False
+            }
+
+        monkeypatch.setattr("logist.job_processor.execute_llm_with_cline", mock_execute_llm)
+        monkeypatch.setattr("logist.workspace_utils.setup_isolated_workspace", mock_setup_workspace)
 
         # Initialize jobs directory and create a sample job with phases
         self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "init"])
@@ -765,10 +789,34 @@ class TestRerunCommand:
         assert "Job 'sample-job' reset for rerun" in result.output
         assert "Rerun initiated successfully" in result.output
 
-    def test_rerun_job_from_specific_step(self, tmp_path, capsys):
+    def test_rerun_job_from_specific_step(self, tmp_path, capsys, monkeypatch):
         """Test rerunning a job from a specific step number."""
         jobs_dir = tmp_path / "jobs"
         jobs_dir.mkdir()
+
+        # Mock LLM execution to avoid actual Cline calls
+        def mock_execute_llm(*args, **kwargs):
+            return {
+                "action": "COMPLETED",
+                "evidence_files": [],
+                "summary_for_supervisor": "Mock rerun step execution",
+                "processed_at": "2025-01-01T00:00:00",
+                "metrics": {"cost_usd": 0.1, "duration_seconds": 1.0},
+                "cline_task_id": "mock-task-123"
+            }, 1.0
+
+        # Mock workspace setup to avoid git operations
+        def mock_setup_workspace(*args, **kwargs):
+            return {
+                "success": True,
+                "workspace_prepared": True,
+                "target_repo_created": True,
+                "attachments_copied": False,
+                "prepare_script_run": False
+            }
+
+        monkeypatch.setattr("logist.job_processor.execute_llm_with_cline", mock_execute_llm)
+        monkeypatch.setattr("logist.workspace_utils.setup_isolated_workspace", mock_setup_workspace)
 
         # Initialize jobs directory and create a sample job with phases
         self.runner.invoke(main, ["--jobs-dir", str(jobs_dir), "init"])
