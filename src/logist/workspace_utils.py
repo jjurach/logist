@@ -20,6 +20,160 @@ def find_git_root(cwd=None):
 
     return None
 
+def create_or_recreate_job_branch(git_root: str, job_branch_name: str, base_branch: str, debug: bool = False) -> bool:
+    """
+    Create or recreate the job-specific branch.
+
+    Follows the workflow: delete existing job branch, then create new one from base branch.
+    Returns True if successful.
+    """
+    try:
+        # Delete existing job branch if it exists
+        if debug:
+            click.echo(f"   🔧 [DEBUG] Running: git branch -D {job_branch_name} || true (cwd: {git_root})")
+        subprocess.run(
+            ["git", "branch", "-D", job_branch_name],
+            cwd=git_root,
+            capture_output=True,
+            text=True,
+            check=False  # Don't fail if branch doesn't exist
+        )
+
+        # Create new branch from base branch
+        if debug:
+            click.echo(f"   🔧 [DEBUG] Running: git checkout -b {job_branch_name} {base_branch} (cwd: {git_root})")
+        subprocess.run(
+            ["git", "checkout", "-b", job_branch_name, base_branch],
+            cwd=git_root,
+            capture_output=True,
+            text=True,
+            check=True
+        )
+
+        if debug:
+            click.echo(f"   🔧 [DEBUG] Job branch '{job_branch_name}' created from '{base_branch}' successfully")
+
+        return True
+
+    except subprocess.CalledProcessError as e:
+        if debug:
+            click.echo(f"   🔧 [DEBUG] Failed to create job branch: {e.stderr}")
+        return False
+
+
+def setup_target_git_repo(git_root: str, job_dir: str, job_branch_name: str, debug: bool = False) -> bool:
+    """
+    Create the target.git bare repository by cloning the job branch.
+
+    Returns True if successful.
+    """
+    try:
+        if debug:
+            click.echo(f"   🔧 [DEBUG] Running: git clone --bare --branch {job_branch_name} {git_root} target.git (cwd: {job_dir})")
+
+        subprocess.run(
+            ["git", "clone", "--bare", "--branch", job_branch_name, git_root, "target.git"],
+            cwd=job_dir,
+            capture_output=True,
+            text=True,
+            check=True
+        )
+
+        if debug:
+            click.echo(f"   🔧 [DEBUG] target.git repository created successfully")
+
+        return True
+
+    except subprocess.CalledProcessError as e:
+        if debug:
+            click.echo(f"   🔧 [DEBUG] Failed to create target.git repository: {e.stderr}")
+        return False
+
+
+def setup_job_remote_and_push(git_root: str, job_dir: str, job_branch_name: str, debug: bool = False) -> bool:
+    """
+    Add a remote for the job and push the job branch to it.
+
+    Returns True if successful.
+    """
+    try:
+        # Remove remote if it exists
+        if debug:
+            click.echo(f"   🔧 [DEBUG] Running: git remote remove {job_branch_name} || true (cwd: {git_root})")
+        subprocess.run(
+            ["git", "remote", "remove", job_branch_name],
+            cwd=git_root,
+            capture_output=True,
+            text=True,
+            check=False  # Don't fail if remote doesn't exist
+        )
+
+        # Add remote
+        target_git_path = os.path.join(job_dir, "target.git")
+        if debug:
+            click.echo(f"   🔧 [DEBUG] Running: git remote add {job_branch_name} {target_git_path} (cwd: {git_root})")
+        subprocess.run(
+            ["git", "remote", "add", job_branch_name, target_git_path],
+            cwd=git_root,
+            capture_output=True,
+            text=True,
+            check=True
+        )
+
+        # Push branch to remote
+        if debug:
+            click.echo(f"   🔧 [DEBUG] Running: git push {job_branch_name} {job_branch_name} (cwd: {git_root})")
+        subprocess.run(
+            ["git", "push", job_branch_name, job_branch_name],
+            cwd=git_root,
+            capture_output=True,
+            text=True,
+            check=True
+        )
+
+        if debug:
+            click.echo(f"   🔧 [DEBUG] Job remote and push completed successfully")
+
+        return True
+
+    except subprocess.CalledProcessError as e:
+        if debug:
+            click.echo(f"   🔧 [DEBUG] Failed to setup job remote and push: {e.stderr}")
+        return False
+
+
+def create_workspace_from_bare_repo(job_dir: str, debug: bool = False) -> bool:
+    """
+    Create the workspace worktree from the bare repository.
+
+    Returns True if successful.
+    """
+    try:
+        target_git_path = os.path.join(job_dir, "target.git")
+        workspace_path = os.path.join(job_dir, "workspace")
+
+        if debug:
+            click.echo(f"   🔧 [DEBUG] Running: git --git-dir {target_git_path} worktree add {workspace_path} (cwd: {job_dir})")
+
+        subprocess.run(
+            ["git", "--git-dir", target_git_path, "worktree", "add", workspace_path],
+            cwd=job_dir,
+            capture_output=True,
+            text=True,
+            check=True
+        )
+
+        if debug:
+            click.echo(f"   🔧 [DEBUG] Workspace worktree created successfully from bare repo")
+
+        return True
+
+    except subprocess.CalledProcessError as e:
+        if debug:
+            click.echo(f"   🔧 [DEBUG] Failed to create workspace worktree: {e.stderr}")
+        return False
+
+
 def verify_workspace_exists(job_dir: str) -> bool:
     """Verifies if the isolated workspace directory exists and is a git repository."""
     workspace_dir = os.path.join(job_dir, "workspace")
@@ -412,15 +566,15 @@ def perform_git_commit(
 
 def setup_isolated_workspace(job_id: str, job_dir: str, base_branch: str = "main", debug: bool = False) -> Dict[str, Any]:
     """
-    Sets up workspace by creating job branch and worktree with symlinked .git.
+    Sets up isolated workspace following the exact workflow from prompt.md.
 
-    Creates job-specific branch in main repo, clones to target.git, and sets up
-    workspace as a git worktree with prepare-python-project.sh execution.
+    Creates job-specific branch, bare repository clone, remote setup, and worktree.
 
     Args:
         job_id: Unique job identifier
         job_dir: Job directory path
         base_branch: Base branch to branch from (default: main)
+        debug: Enable debug logging
 
     Returns:
         Dict with setup status and workspace information
@@ -458,11 +612,7 @@ def setup_isolated_workspace(job_id: str, job_dir: str, base_branch: str = "main
                 click.echo(f"   🔧 [DEBUG] Reusing existing valid workspace setup for branch '{job_branch_name}'")
             result["target_repo_created"] = True
             result["workspace_prepared"] = True
-            # Skip to attachment preparation and script execution
         else:
-            if debug:
-                click.echo(f"   🔧 [DEBUG] Creating fresh workspace setup (target_git_valid: {target_git_valid}, workspace_valid: {workspace_valid})")
-
             # Remove invalid existing directories
             if os.path.exists(workspace_dir) and not workspace_valid:
                 if debug:
@@ -473,143 +623,45 @@ def setup_isolated_workspace(job_id: str, job_dir: str, base_branch: str = "main
                     click.echo(f"   🔧 [DEBUG] Removing invalid target.git directory")
                 shutil.rmtree(target_git_dir)
 
-            # 1. Read the previous branch (current branch in main repo) before creating job branch
-            previous_branch = None
-            try:
-                if debug:
-                    click.echo(f"   🔧 [DEBUG] Running: git rev-parse --abbrev-ref HEAD (cwd: {git_root})")
-                branch_result = subprocess.run(
-                    ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-                    cwd=git_root,
-                    capture_output=True,
-                    text=True,
-                    check=True
-                )
-                previous_branch = branch_result.stdout.strip()
-            except subprocess.CalledProcessError as e:
-                result["error"] = f"Failed to read current branch: {e.stderr}"
+            # Follow the exact workflow from prompt.md
+
+            # 1. Create or recreate job branch from base branch
+            if debug:
+                click.echo(f"   🔧 [DEBUG] Creating job branch from '{base_branch}'")
+            if not create_or_recreate_job_branch(git_root, job_branch_name, base_branch, debug):
+                result["error"] = "Failed to create job branch"
                 return result
 
-            # 2. Create job-specific branch in main repository (without switching main repo)
-            try:
-                # Check if branch already exists
-                if debug:
-                    click.echo(f"   🔧 [DEBUG] Running: git branch --list {job_branch_name} (cwd: {git_root})")
-                branch_check = subprocess.run(
-                    ["git", "branch", "--list", job_branch_name],
-                    cwd=git_root,
-                    capture_output=True,
-                    text=True,
-                    check=True
-                )
+            # 2. Clone bare repository for the job branch
+            if debug:
+                click.echo(f"   🔧 [DEBUG] Setting up target.git repository")
+            if not setup_target_git_repo(git_root, job_dir, job_branch_name, debug):
+                result["error"] = "Failed to create target.git repository"
+                return result
+            result["target_repo_created"] = True
 
-                if job_branch_name not in branch_check.stdout:
-                    # Create new branch from base_branch without switching
-                    if debug:
-                        click.echo(f"   🔧 [DEBUG] Running: git branch {job_branch_name} {base_branch} (cwd: {git_root})")
-                    subprocess.run(
-                        ["git", "branch", job_branch_name, base_branch],
-                        cwd=git_root,
-                        check=True,
-                        capture_output=True,
-                        text=True
-                    )
-            except subprocess.CalledProcessError as e:
-                result["error"] = f"Failed to create job branch: {e.stderr}"
+            # 3. Add remote and push the job branch
+            if debug:
+                click.echo(f"   🔧 [DEBUG] Setting up job remote and pushing")
+            if not setup_job_remote_and_push(git_root, job_dir, job_branch_name, debug):
+                result["error"] = "Failed to setup job remote and push"
                 return result
 
-            # 3. Switch main repository back to the previous branch to avoid version control confusion
-            try:
-                if debug:
-                    click.echo(f"   🔧 [DEBUG] Running: git checkout {previous_branch} (cwd: {git_root})")
-                subprocess.run(
-                    ["git", "checkout", previous_branch],
-                    cwd=git_root,
-                    check=True,
-                    capture_output=True,
-                    text=True
-                )
-            except subprocess.CalledProcessError as e:
-                result["error"] = f"Failed to switch back to previous branch: {e.stderr}"
+            # 4. Create workspace worktree from bare repository
+            if debug:
+                click.echo(f"   🔧 [DEBUG] Creating workspace worktree")
+            if not create_workspace_from_bare_repo(job_dir, debug):
+                result["error"] = "Failed to create workspace worktree"
                 return result
+            result["workspace_prepared"] = True
 
-            # 4. Clone job branch to target.git as bare repository
-            try:
-                if debug:
-                    click.echo(f"   🔧 [DEBUG] Running: git clone --bare --branch {job_branch_name} {git_root} target.git (cwd: {job_dir})")
-                subprocess.run(
-                    ["git", "clone", "--bare", "--branch", job_branch_name, git_root, "target.git"],
-                    cwd=job_dir,
-                    check=True,
-                    capture_output=True,
-                    text=True
-                )
-                result["target_repo_created"] = True
-            except subprocess.CalledProcessError as e:
-                result["error"] = f"Failed to clone job branch to target.git: {e.stderr}"
-                return result
-
-            # 5. Create workspace directory and set up git worktree
-            os.makedirs(workspace_dir, exist_ok=True)
-
-            try:
-                # Check if workspace already exists as a worktree and remove it
-                if debug:
-                    click.echo(f"   🔧 [DEBUG] Running: git worktree list --porcelain (cwd: {git_root})")
-                worktree_check = subprocess.run(
-                    ["git", "worktree", "list", "--porcelain"],
-                    cwd=git_root,
-                    capture_output=True,
-                    text=True,
-                    check=True
-                )
-                if workspace_dir in worktree_check.stdout:
-                    # Remove existing worktree if it exists
-                    if debug:
-                        click.echo(f"   🔧 [DEBUG] Running: git worktree remove --force {workspace_dir} (cwd: {git_root})")
-                    subprocess.run(
-                        ["git", "worktree", "remove", "--force", workspace_dir],
-                        cwd=git_root,
-                        capture_output=True,
-                        text=True,
-                        check=False  # Don't fail if worktree doesn't exist
-                    )
-
-                # Use git worktree add to create a proper worktree, then adjust .git linkage
-                # First, add the worktree
-                if debug:
-                    click.echo(f"   🔧 [DEBUG] Running: git worktree add --detach {workspace_dir} {job_branch_name} (cwd: {git_root})")
-                subprocess.run(
-                    ["git", "worktree", "add", "--detach", workspace_dir, job_branch_name],
-                    cwd=git_root,
-                    check=True,
-                    capture_output=True,
-                    text=True
-                )
-
-                # Now adjust the .git directory to point to our target.git
-                workspace_git_link = os.path.join(workspace_dir, ".git")
-                if os.path.exists(workspace_git_link):
-                    # Remove the auto-generated .git file/dir and replace with symlink to target.git
-                    if os.path.isdir(workspace_git_link):
-                        shutil.rmtree(workspace_git_link)
-                    elif os.path.isfile(workspace_git_link):
-                        os.remove(workspace_git_link)
-                    elif os.path.islink(workspace_git_link):
-                        os.remove(workspace_git_link)
-
-                # Create symlink to our target.git
-                os.symlink("../target.git", workspace_git_link)
-
-                result["workspace_prepared"] = True
-            except (OSError, subprocess.CalledProcessError) as e:
-                result["error"] = f"Failed to set up workspace git worktree: {str(e)}"
-                return result
-
-        # 4. Run prepare-python-project.sh if it exists
+        # Post-setup: Run prepare-python-project.sh if it exists
         prepare_script = os.path.join(git_root, "AGENTS", "prepare-python-project.sh")
-        if os.path.exists(prepare_script):
+        workspace_dir = os.path.join(job_dir, "workspace")
+        if os.path.exists(prepare_script) and os.path.exists(workspace_dir):
             try:
+                if debug:
+                    click.echo(f"   🔧 [DEBUG] Running prepare-python-project.sh")
                 subprocess.run(
                     [prepare_script],
                     cwd=workspace_dir,
@@ -622,11 +674,13 @@ def setup_isolated_workspace(job_id: str, job_dir: str, base_branch: str = "main
                 # Prepare script failure shouldn't block workspace creation
                 pass
 
-        # 5. Copy attachments if they exist
+        # Copy attachments if they exist
         if os.path.exists(attachments_dir) and os.listdir(attachments_dir):
             try:
-                attachments_dest = os.path.join(workspace_dir, "attachments")
-                shutil.copytree(attachments_dir, attachments_dest)
+                workspace_attachments = os.path.join(workspace_dir, "attachments")
+                if debug:
+                    click.echo(f"   🔧 [DEBUG] Copying attachments to workspace")
+                shutil.copytree(attachments_dir, workspace_attachments)
                 result["attachments_copied"] = True
             except Exception as e:
                 # Attachment copy failure shouldn't block workspace creation
@@ -634,8 +688,6 @@ def setup_isolated_workspace(job_id: str, job_dir: str, base_branch: str = "main
 
         result["success"] = True
 
-    except subprocess.CalledProcessError as e:
-        result["error"] = f"Git operation failed: {e.stderr}"
     except Exception as e:
         result["error"] = f"Unexpected error: {str(e)}"
     finally:

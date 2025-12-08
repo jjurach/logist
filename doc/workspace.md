@@ -18,9 +18,9 @@ The original `setup_isolated_workspace()` function always removed existing `work
 2. **Unnecessarily destructive**: Valid workspaces were destroyed unnecessarily
 3. **Potential data loss**: Any uncommitted changes in existing workspaces were lost
 
-## Current Implementation: Idempotent Workspace Creation
+## Current Implementation: Prompt.md Workflow
 
-The updated implementation follows these steps:
+The implementation now follows the exact workflow specified in `tmp/prompt.md`, ensuring a clean, predictable workspace creation process.
 
 ### 1. Validation Phase
 ```python
@@ -30,31 +30,33 @@ workspace_valid = validate_existing_workspace(job_dir, job_branch_name, debug)
 
 ### 2. Decision Logic
 - If both `target.git` and `workspace` exist and are valid: **Reuse existing setup**
-- If either is missing or invalid: **Create fresh setup**
+- If either is missing or invalid: **Create fresh setup using prompt.md workflow**
 
-### 3. Fresh Setup Commands (when needed)
+### 3. Prompt.md Workflow Commands
 
-The implementation uses these git commands executed from the project's git root:
+The implementation executes these commands in sequence from the project's git root:
 
-#### Branch Creation
+#### Job Branch Management
 ```bash
-git branch --list job-{job_id}          # Check if job branch exists
-git branch job-{job_id} {base_branch}   # Create from base branch if missing
-git checkout {original_branch}          # Restore original branch
+git branch -D job-{job_id} || true               # Delete existing job branch
+git checkout -b job-{job_id} {base_branch}       # Create new branch from base
 ```
 
-#### Repository Setup
+#### Bare Repository Creation
 ```bash
-git clone --bare --branch job-{job_id} {git_root} target.git
+git clone --bare --branch job-{job_id} $(pwd) $job_dir/target.git
 ```
 
-#### Worktree Setup
+#### Remote Setup and Push
 ```bash
-git worktree list --porcelain | grep workspace  # Check for conflicts
-git worktree remove --force workspace           # Remove conflicting worktree if exists
-git worktree add --detach workspace job-{job_id}
-rm -rf workspace/.git                            # Remove auto-generated .git
-ln -s ../target.git workspace/.git              # Create symlink to target.git
+git remote remove job-{job_id} || true           # Remove existing remote
+git remote add job-{job_id} $job_dir/target.git  # Add job remote
+git push job-{job_id} job-{job_id}               # Push branch to remote
+```
+
+#### Workspace Creation
+```bash
+git --git-dir $job_dir/target.git worktree add $job_dir/workspace
 ```
 
 #### Environment Preparation
