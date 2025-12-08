@@ -2022,7 +2022,8 @@ def activate_job(ctx, job_id: str | None, rank: int):
 
         # Setup workspace for immediate execution readiness
         try:
-            manager.setup_workspace(job_dir)
+            debug_mode = ctx.obj.get("DEBUG", False)
+            manager.setup_workspace(job_dir, debug=debug_mode)
             click.echo("   🏗️  Workspace initialized")
         except Exception as e:
             # Log warning but don't fail activation - user can still run commands

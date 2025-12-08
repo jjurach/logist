@@ -210,7 +210,7 @@ class TestJobManagerService(unittest.TestCase):
 
             # Verify workspace setup was called
             mock_workspace.setup_isolated_workspace.assert_called_once_with(
-                "workspace-test", job_dir, base_branch="main"
+                "workspace-test", job_dir, base_branch="main", debug=False
             )
 
     def test_setup_workspace_failure(self):
@@ -225,7 +225,7 @@ class TestJobManagerService(unittest.TestCase):
             }
 
             with self.assertRaises(Exception) as context:
-                self.service.setup_workspace(job_dir)
+                self.service.setup_workspace(job_dir, debug=False)
             self.assertIn("Test error", str(context.exception))
 
     def test_simulate_methods(self):

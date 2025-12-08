@@ -291,14 +291,14 @@ class JobManagerService:
         engine = LogistEngine()
         return engine.step_job(ctx, job_id, job_dir, dry_run=dry_run)
 
-    def setup_workspace(self, job_dir: str) -> None:
+    def setup_workspace(self, job_dir: str, debug: bool = False) -> None:
         """Setup isolated workspace with branch management for advanced isolation."""
         # Extract job_id from directory path
         job_id = os.path.basename(os.path.abspath(job_dir))
 
         try:
             # Use advanced isolated workspace setup (clones HEAD, no branch creation)
-            result = workspace_utils.setup_isolated_workspace(job_id, job_dir, base_branch="main")
+            result = workspace_utils.setup_isolated_workspace(job_id, job_dir, base_branch="main", debug=debug)
             if not result["success"]:
                 raise Exception(f"Failed to setup isolated workspace: {result['error']}")
 

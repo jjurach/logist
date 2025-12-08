@@ -24,25 +24,52 @@ def create_or_recreate_job_branch(git_root: str, job_branch_name: str, base_bran
     """
     Create or recreate the job-specific branch.
 
-    Follows the workflow: delete existing job branch, then create new one from base branch.
+    Handles existing branches by force deleting them first, then creates from base branch.
     Returns True if successful.
     """
     try:
-        # Delete existing job branch if it exists
+        # First, check if we're currently on the job branch and switch away if needed
+        current_branch_result = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=git_root,
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        current_branch = current_branch_result.stdout.strip()
         if debug:
-            click.echo(f"   🔧 [DEBUG] Running: git branch -D {job_branch_name} || true (cwd: {git_root})")
-        subprocess.run(
-            ["git", "branch", "-D", job_branch_name],
+            click.echo(f"   🔧 [DEBUG] Currently on branch: {current_branch}")
+
+        if current_branch == job_branch_name:
+            if debug:
+                click.echo(f"   🔧 [DEBUG] Switching from {job_branch_name} to {base_branch}")
+            subprocess.run(
+                ["git", "checkout", base_branch],
+                cwd=git_root,
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            if debug:
+                click.echo(f"   🔧 [DEBUG] Switched to {base_branch}")
+
+        # Force delete the job branch with --force -D
+        if debug:
+            click.echo(f"   🔧 [DEBUG] Force deleting branch {job_branch_name}")
+        delete_result = subprocess.run(
+            ["git", "branch", "-D", "--force", job_branch_name],
             cwd=git_root,
             capture_output=True,
             text=True,
             check=False  # Don't fail if branch doesn't exist
         )
+        if delete_result.returncode != 0 and debug:
+            click.echo(f"   🔧 [DEBUG] Branch deletion message: {delete_result.stderr.strip()}")
 
-        # Create new branch from base branch
+        # Now create the branch fresh
         if debug:
-            click.echo(f"   🔧 [DEBUG] Running: git checkout -b {job_branch_name} {base_branch} (cwd: {git_root})")
-        subprocess.run(
+            click.echo(f"   🔧 [DEBUG] Creating branch {job_branch_name} from {base_branch}")
+        create_result = subprocess.run(
             ["git", "checkout", "-b", job_branch_name, base_branch],
             cwd=git_root,
             capture_output=True,
@@ -51,13 +78,21 @@ def create_or_recreate_job_branch(git_root: str, job_branch_name: str, base_bran
         )
 
         if debug:
-            click.echo(f"   🔧 [DEBUG] Job branch '{job_branch_name}' created from '{base_branch}' successfully")
+            click.echo(f"   🔧 [DEBUG] Job branch '{job_branch_name}' created successfully")
 
         return True
 
     except subprocess.CalledProcessError as e:
+        error_msg = f"Git command failed: {e.cmd} - {e.stderr.strip() if e.stderr else 'No stderr'}"
         if debug:
-            click.echo(f"   🔧 [DEBUG] Failed to create job branch: {e.stderr}")
+            click.echo(f"   🔧 [DEBUG] {error_msg}")
+        print(f"DEBUG: create_or_recreate_job_branch failed: {error_msg}")
+        return False
+    except Exception as e:
+        error_msg = f"Unexpected error: {str(e)}"
+        if debug:
+            click.echo(f"   🔧 [DEBUG] {error_msg}")
+        print(f"DEBUG: create_or_recreate_job_branch unexpected error: {error_msg}")
         return False
 
 

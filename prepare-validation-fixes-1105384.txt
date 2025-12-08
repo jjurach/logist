@@ -1,0 +1,7 @@
+fix: better git command error handling and branch conflict resolution
+
+- Improved workspace setup to handle existing branches by checking current branch status
+- Added force deletion of job branches with --force flag
+- Enhanced debug logging for git operations
+- Added proper error reporting for subprocess calls with stderr/stdout details
+- Updated CLI to pass debug flag to job manager workspace setup
