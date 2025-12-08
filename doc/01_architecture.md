@@ -63,10 +63,13 @@ Job workspaces are created **lazily** during execution commands to avoid unneces
 - `logist job restep [JOB_ID]` - Creates workspace for checkpoint restoration
 - `logist job activate [JOB_ID]` *(planned)* - Will create workspace immediately upon job activation
 
-**How Workspace Creation Works:**
-1. The `workspace_utils.setup_isolated_workspace()` function creates a job-specific branch from the base branch
-2. A bare repository clone (`target.git`) is created for the job branch to store git history
-3. Git worktree adds a detached worktree, then adjusts `.git` to symlink to `../target.git`
+**How Workspace Creation Works (Idempotent):**
+1. **Validation**: `setup_isolated_workspace()` first validates if existing `target.git` and `workspace` are present and correctly configured for the job branch
+2. **Reuse**: If valid existing setups exist, they are reused to avoid unnecessary work and preserve uncommitted changes
+3. **Creation**: If validation fails or no existing setup exists:
+   - A job-specific branch is created from the base branch
+   - A bare repository clone (`target.git`) is created for the job branch to store git history
+   - Git worktree adds a detached worktree, then adjusts `.git` to symlink to `../target.git`
 4. The `prepare-python-project.sh` script is automatically executed if available to prepare the workspace
 5. If `attachments/` directory exists, contents are copied to `workspace/attachments/`
 6. The workspace is now ready for Cline CLI execution with transparent git operations through the symlinked `.git`
