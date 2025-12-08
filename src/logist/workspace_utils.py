@@ -347,7 +347,22 @@ def setup_isolated_workspace(job_id: str, job_dir: str, base_branch: str = "main
         if os.path.exists(target_git_dir):
             shutil.rmtree(target_git_dir)
 
-        # 1. Create job-specific branch in main repository (without switching main repo)
+        # 1. Read the previous branch (current branch in main repo) before creating job branch
+        previous_branch = None
+        try:
+            branch_result = subprocess.run(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                cwd=git_root,
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            previous_branch = branch_result.stdout.strip()
+        except subprocess.CalledProcessError as e:
+            result["error"] = f"Failed to read current branch: {e.stderr}"
+            return result
+
+        # 2. Create job-specific branch in main repository (without switching main repo)
         try:
             # Check if branch already exists
             branch_check = subprocess.run(
@@ -371,7 +386,20 @@ def setup_isolated_workspace(job_id: str, job_dir: str, base_branch: str = "main
             result["error"] = f"Failed to create job branch: {e.stderr}"
             return result
 
-        # 2. Clone job branch to target.git as bare repository
+        # 3. Switch main repository back to the previous branch to avoid version control confusion
+        try:
+            subprocess.run(
+                ["git", "checkout", previous_branch],
+                cwd=git_root,
+                check=True,
+                capture_output=True,
+                text=True
+            )
+        except subprocess.CalledProcessError as e:
+            result["error"] = f"Failed to switch back to previous branch: {e.stderr}"
+            return result
+
+        # 4. Clone job branch to target.git as bare repository
         try:
             subprocess.run(
                 ["git", "clone", "--bare", "--branch", job_branch_name, git_root, "target.git"],
