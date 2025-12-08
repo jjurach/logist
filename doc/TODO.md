@@ -19,7 +19,7 @@ This document serves as a structured backlog of proposed features and improvemen
 ## 📅 **Medium Priority (Phase 4-5 Enhancement)**
 
 ### Job Control Operations
-- **Implement job rerun command**: Reset and restart job execution
+- **✓ Implement job rerun command**: Reset and restart job execution (COMPLETED)
 - **Implement job restep command**: Rewind to previous checkpoint and retry
 - **Add job chat command**: Interactive debugging via `cline task chat`
 
