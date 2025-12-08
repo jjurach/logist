@@ -128,3 +128,67 @@ To test individual steps within this workflow:
 Existing jobs with manually created workspaces should be compatible. The validation functions will detect and reuse valid setups while recreating invalid ones.
 
 For testing, add the `debug=True` parameter to `setup_isolated_workspace()` calls to see detailed command execution.
+
+## Testing with Dedicated Source Repositories
+
+Advanced testing scenarios utilize dedicated source repositories to thoroughly validate workspace isolation and lifecycle management. This approach creates completely separate git repositories for testing, providing comprehensive coverage of the workspace functionality.
+
+### Source Repository Test Workflow
+
+The `test_isolated_workspace_full_workflow()` test demonstrates this approach:
+
+1. **Create Fresh Source Repository**
+   ```python
+   # Initialize clean git repo with test content
+   source_repo = tempfile.mkdtemp(prefix="source_repo_")
+   # Add README.md and test.py, commit to main branch
+   ```
+
+2. **Set Up Job-Specific Branch**
+   ```bash
+   git checkout -b job-my-sample-job  # Create job branch from main
+   ```
+
+3. **Create Isolated Workspace Structure**
+   ```bash
+   # 1. Clone bare repo for job branch
+   git clone --bare --branch job-my-sample-job $source_repo $job_dir/target.git
+
+   # 2. Add remote pointing back to source repo
+   git remote add job-my-sample-job $job_dir/target.git
+
+   # 3. Create worktree-based workspace
+   git --git-dir $job_dir/target.git worktree add $job_dir/workspace
+   ```
+
+4. **Simulate Job Execution**
+   ```bash
+   # Create output file in workspace
+   echo "Job execution output: SUCCESS" > workspace/job_output.txt
+
+   # Commit changes to isolated workspace
+   GIT_DIR=$job_dir/target.git GIT_WORK_TREE=$job_dir/workspace git add job_output.txt
+   GIT_DIR=$job_dir/target.git GIT_WORK_TREE=$job_dir/workspace git commit -m "Job completed successfully"
+   ```
+
+5. **Fetch and Verify Changes**
+   ```bash
+   # Fetch changes back to source repository
+   git fetch job-my-sample-job
+
+   # Verify commit appears in log
+   git log --oneline main..job-my-sample-job/job-my-sample-job
+   # Expected: Commit "Job completed successfully" with job_output.txt
+
+   # Verify file content
+   git show --name-only job-my-sample-job/job-my-sample-job
+   ```
+
+### Benefits of Source Repository Testing
+
+- **Complete Isolation**: Tests use entirely separate git repositories
+- **Real-world Simulation**: Mimics actual job execution workflows
+- **Lifecycle Validation**: Verifies full workspace creation, modification, and fetch cycles
+- **Integration Testing**: Tests how workspace changes propagate back to source repos
+
+This testing approach ensures workspace utilities work correctly in scenarios where source repositories and job directories are completely independent, matching the production use cases where jobs operate remotely from their source repositories.
