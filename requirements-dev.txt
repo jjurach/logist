@@ -2,6 +2,7 @@
 pytest>=7.0.0
 pytest-mock
 pytest-cov
+pytest-timeout
 click>=8.0.0
 black
 isort

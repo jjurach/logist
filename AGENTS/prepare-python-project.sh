@@ -28,12 +28,14 @@ pip install -e . > .prepare-build.out 2>&1
 test -f requirements-dev.txt && pip install -r requirements-dev.txt >> .prepare-build.out 2>&1
 echo Successful build output in $(pwd)/.prepare-build.out
 
-echo running pytest -x ...
+extra=
+grep -q pytest-timeout requirements-dev.txt 2>/dev/null && extra="--timeout=15"
+echo running pytest $extra -x ...
 if test -f requirements-dev.txt && grep -q pytest requirements-dev.txt; then
-  if timeout 15s pytest -x > .prepare-pytest-x.out 2>&1; then
+  if pytest $extra -x > .prepare-pytest-x.out 2>&1; then
     echo All pytests appeared to succeed.  output in $(pwd)/.prepare-pytest-x.out
   else
-    echo pytest -x failed'!' -- output in $(pwd)/.prepare-pytest-x.out
+    echo pytest $extra -x failed'!' -- output in $(pwd)/.prepare-pytest-x.out
   fi
 else
   echo No pytests detected.
