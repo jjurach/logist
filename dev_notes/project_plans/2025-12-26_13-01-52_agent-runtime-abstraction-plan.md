@@ -48,21 +48,21 @@ Implement a robust Logist system with decoupled Agent/Runtime architecture, pers
    - Files to modify: None
    - Dependencies: Phase 1.1
    - Estimated time: 4 hours
-   - Status: [ ] Not Started
+   - Status: [x] Completed
 
 5. **Create Pytest Fixtures**
    - Files to modify: `tests/conftest.py` (create if doesn't exist)
    - Files to create: `tests/test_mock_agent.py`
    - Dependencies: Phase 2.1
    - Estimated time: 3 hours
-   - Status: [ ] Not Started
+   - Status: [x] Completed
 
 6. **Implement Core Test Cases**
    - Files to create: `tests/test_agent_runtime_integration.py`
    - Files to modify: None
    - Dependencies: Phase 2.2
    - Estimated time: 4 hours
-   - Status: [ ] Not Started
+   - Status: [x] Completed
 
 ### Phase 3: Persistent Job Management
 7. **Create Job Directory Structure Management**
