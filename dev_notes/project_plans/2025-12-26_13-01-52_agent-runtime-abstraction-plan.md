@@ -122,14 +122,14 @@ Implement a robust Logist system with decoupled Agent/Runtime architecture, pers
     - Files to create: None
     - Dependencies: Phase 3.3, 5.2
     - Estimated time: 3 hours
-    - Status: [ ] Not Started
+    - Status: [x] Completed
 
 15. **Add Job Status Dashboard Command**
     - Files to modify: `src/logist/cli.py`
     - Files to create: `src/logist/commands/dashboard.py`
     - Dependencies: Phase 3.1
     - Estimated time: 2 hours
-    - Status: [ ] Not Started
+    - Status: [x] Completed
 
 ### Phase 7: Integration Testing & Validation
 16. **End-to-End Integration Tests**

@@ -1891,6 +1891,315 @@ def preview_job(ctx, job_id: str | None, detailed: bool):
         click.secho(f"❌ Error during job preview: {e}", fg="red")
 
 
+@job.command(name="attach")
+@click.argument("job_id", required=False)
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Force attachment even if job appears to be running elsewhere."
+)
+@click.option(
+    "--recovery",
+    is_flag=True,
+    help="Attempt recovery if job appears to be crashed."
+)
+@click.pass_context
+def attach_job(ctx, job_id: str | None, force: bool, recovery: bool):
+    """Attach to a running job or recover a crashed job."""
+    click.echo("🔗 Executing 'logist job attach'")
+
+    # Get job ID
+    final_job_id = get_job_id(ctx, job_id)
+    if not final_job_id:
+        raise click.ClickException("❌ No job ID provided and no current job is selected.")
+
+    job_dir = get_job_dir(ctx, final_job_id)
+    if not job_dir:
+        raise click.ClickException(f"❌ Job '{final_job_id}' not found.")
+
+    try:
+        # Load job manifest
+        manifest = load_job_manifest(job_dir)
+        current_status = manifest.get("status", "UNKNOWN")
+
+        click.echo(f"🔗 Attaching to job '{final_job_id}'")
+        click.echo(f"   📊 Current status: {current_status}")
+
+        # Initialize sentinel for job monitoring
+        jobs_dir = ctx.obj["JOBS_DIR"]
+        engine.initialize_sentinel(jobs_dir)
+
+        # Start monitoring this job
+        if not engine.start_job_monitoring(final_job_id):
+            click.secho("⚠️  Failed to start job monitoring", fg="yellow")
+
+        # Check if job appears to be running
+        reattach_result = engine.get_sentinel().reattach_to_running_job(final_job_id, process_check=True)
+        if reattach_result["reattached"]:
+            click.secho(f"   ✅ Successfully reattached to running job '{final_job_id}'", fg="green")
+            click.echo(f"   📊 Job status: {reattach_result['status']}")
+            return
+
+        # If reattachment failed and recovery is requested
+        if recovery and not reattach_result["reattached"]:
+            click.echo("   🔄 Attempting recovery...")
+
+            recovery_result = engine.get_sentinel().recover_crashed_job(final_job_id, force=force)
+            if recovery_result["recovered"]:
+                click.secho(f"   ✅ Successfully recovered job '{final_job_id}'", fg="green")
+                click.echo(f"   📊 Recovery actions: {', '.join(recovery_result['actions_taken'])}")
+                return
+            else:
+                click.secho(f"   ❌ Recovery failed: {recovery_result['errors']}", fg="red")
+                raise click.ClickException(f"Job recovery failed for '{final_job_id}'")
+
+        # If neither reattachment nor recovery worked
+        if not reattach_result["reattached"]:
+            click.echo(f"   ℹ️  Job '{final_job_id}' does not appear to be running")
+            click.echo("   💡 Try 'logist job run' to start execution")
+            click.echo("   💡 Or use --recovery to attempt crash recovery")
+
+    except (click.ClickException, Exception) as e:
+        click.secho(f"❌ Error during job attach: {e}", fg="red")
+        raise
+
+
+@job.command(name="recover")
+@click.argument("job_id", required=False)
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Force recovery operations even if job appears to be running."
+)
+@click.option(
+    "--all",
+    is_flag=True,
+    help="Recover all crashed jobs (ignores job_id argument)."
+)
+@click.pass_context
+def recover_job(ctx, job_id: str | None, force: bool, all: bool):
+    """Recover crashed jobs using automated recovery procedures."""
+    click.echo("🔧 Executing 'logist job recover'")
+
+    jobs_dir = ctx.obj["JOBS_DIR"]
+
+    # Initialize sentinel for recovery operations
+    engine.initialize_sentinel(jobs_dir)
+
+    if all:
+        # Bulk recovery of all crashed jobs
+        click.echo("   🔍 Scanning for crashed jobs...")
+
+        crashed_jobs = engine.get_sentinel().detect_crashed_jobs()
+        if not crashed_jobs:
+            click.echo("   ✅ No crashed jobs detected")
+            return
+
+        click.echo(f"   📋 Found {len(crashed_jobs)} crashed jobs")
+
+        # Perform bulk recovery
+        recovery_result = engine.get_sentinel().perform_bulk_recovery(
+            job_ids=[job["job_id"] for job in crashed_jobs],
+            force=force
+        )
+
+        click.echo("
+📊 Bulk Recovery Results:"        click.echo(f"   ✅ Successful recoveries: {recovery_result['successful_recoveries']}")
+        click.echo(f"   ❌ Failed recoveries: {recovery_result['failed_recoveries']}")
+        click.echo(f"   📊 Total processed: {recovery_result['total_jobs_processed']}")
+
+        if recovery_result["job_results"]:
+            click.echo("
+📋 Recovery Details:"            for job_result in recovery_result["job_results"]:
+                job_id_result = job_result.get("job_id", "unknown")
+                if job_result.get("recovered"):
+                    click.secho(f"   ✅ {job_id_result}: Recovered", fg="green")
+                else:
+                    click.secho(f"   ❌ {job_id_result}: {job_result.get('errors', ['Unknown error'])[0]}", fg="red")
+
+        return
+
+    # Single job recovery
+    final_job_id = get_job_id(ctx, job_id)
+    if not final_job_id:
+        raise click.ClickException("❌ No job ID provided and no current job is selected.")
+
+    job_dir = get_job_dir(ctx, final_job_id)
+    if not job_dir:
+        raise click.ClickException(f"❌ Job '{final_job_id}' not found.")
+
+    try:
+        click.echo(f"🔧 Recovering job '{final_job_id}'")
+
+        # Check if job needs recovery
+        validation = engine.get_sentinel().validate_job_consistency(final_job_id)
+        if validation["consistent"]:
+            click.echo(f"   ℹ️  Job '{final_job_id}' appears to be in consistent state")
+            click.echo("   💡 No recovery needed")
+            return
+
+        click.echo("   ⚠️  Inconsistencies detected:")
+        for issue in validation["issues"][:5]:  # Show first 5 issues
+            click.echo(f"      • {issue}")
+        if len(validation["issues"]) > 5:
+            click.echo(f"      ... and {len(validation['issues']) - 5} more")
+
+        # Perform recovery
+        recovery_result = engine.get_sentinel().recover_crashed_job(final_job_id, force=force)
+
+        if recovery_result["recovered"]:
+            click.secho(f"   ✅ Successfully recovered job '{final_job_id}'", fg="green")
+            click.echo(f"   📊 Recovery actions: {', '.join(recovery_result['actions_taken'])}")
+
+            # Show recommendations if any
+            if validation.get("recommendations"):
+                click.echo("   💡 Recommendations:")
+                for rec in validation["recommendations"]:
+                    click.echo(f"      • {rec}")
+        else:
+            click.secho(f"   ❌ Recovery failed: {recovery_result['errors']}", fg="red")
+            raise click.ClickException(f"Job recovery failed for '{final_job_id}'")
+
+    except (click.ClickException, Exception) as e:
+        click.secho(f"❌ Error during job recover: {e}", fg="red")
+        raise
+
+
+@main.command()
+@click.option(
+    "--jobs-dir",
+    envvar="LOGIST_JOBS_DIR",
+    default=os.path.expanduser("~/.logist/jobs"),
+    help="Jobs directory to monitor."
+)
+@click.option(
+    "--refresh",
+    type=int,
+    default=30,
+    help="Refresh interval in seconds (0 for single display)."
+)
+@click.option(
+    "--compact",
+    is_flag=True,
+    help="Show compact dashboard format."
+)
+@click.pass_context
+def dashboard(ctx, jobs_dir: str, refresh: int, compact: bool):
+    """Display comprehensive job execution dashboard with monitoring."""
+    click.echo("📊 Executing 'logist dashboard'")
+
+    # Initialize sentinel for monitoring
+    engine.initialize_sentinel(jobs_dir)
+
+    # Start monitoring all jobs
+    engine.start_job_monitoring()
+
+    try:
+        while True:
+            # Clear screen for refresh
+            if refresh > 0:
+                click.clear()
+
+            click.echo(f"🚀 Logist Dashboard - {jobs_dir}")
+            click.echo("=" * 60)
+
+            # Get sentinel status
+            sentinel_status = engine.get_sentinel_status()
+            if sentinel_status:
+                click.echo("🔍 Execution Sentinel Status:"                click.echo(f"   📊 State: {sentinel_status.get('state', 'unknown')}")
+                click.echo(f"   🎯 Active Jobs: {sentinel_status.get('active_jobs', 0)}")
+                click.echo(f"   🚨 Hangs Detected: {sentinel_status.get('hangs_detected', 0)}")
+                click.echo(f"   🛠️  Interventions: {sentinel_status.get('interventions_performed', 0)}")
+
+                recent_hangs = sentinel_status.get('recent_hangs', [])
+                if recent_hangs:
+                    click.echo("   📋 Recent Hangs:")
+                    for hang in recent_hangs[-3:]:  # Show last 3
+                        click.echo(f"      • {hang['job_id']}: {hang['severity']} ({hang['detected_at'][:19]})")
+            else:
+                click.echo("🔍 Execution Sentinel: Not available")
+
+            # Get job statistics
+            try:
+                jobs = manager.list_jobs(jobs_dir)
+                total_jobs = len(jobs)
+
+                # Count jobs by status
+                status_counts = {}
+                running_jobs = []
+                pending_jobs = []
+
+                for job in jobs:
+                    status = job.get('status', 'UNKNOWN')
+                    status_counts[status] = status_counts.get(status, 0) + 1
+
+                    if status in ['RUNNING', 'REVIEWING']:
+                        running_jobs.append(job)
+                    elif status == 'PENDING':
+                        pending_jobs.append(job)
+
+                click.echo("
+📈 Job Statistics:"                click.echo(f"   📊 Total Jobs: {total_jobs}")
+
+                if status_counts:
+                    click.echo("   📋 Status Breakdown:")
+                    for status, count in status_counts.items():
+                        click.echo(f"      • {status}: {count}")
+
+                # Show running jobs
+                if running_jobs:
+                    click.echo(f"   🏃 Running Jobs ({len(running_jobs)}):")
+                    for job in running_jobs[:3]:  # Show first 3
+                        click.echo(f"      • {job['job_id']} ({job.get('status', 'unknown')})")
+                    if len(running_jobs) > 3:
+                        click.echo(f"      ... and {len(running_jobs) - 3} more")
+
+                # Show pending jobs
+                if pending_jobs:
+                    click.echo(f"   ⏳ Pending Jobs ({len(pending_jobs)}):")
+                    for job in pending_jobs[:3]:  # Show first 3
+                        click.echo(f"      • {job['job_id']}")
+                    if len(pending_jobs) > 3:
+                        click.echo(f"      ... and {len(pending_jobs) - 3} more")
+
+            except Exception as e:
+                click.echo(f"   ⚠️  Error getting job statistics: {e}")
+
+            # Show system health
+            if sentinel_status:
+                hangs = sentinel_status.get('hangs_detected', 0)
+                interventions = sentinel_status.get('interventions_performed', 0)
+
+                if hangs > 0:
+                    health_status = "🟡 Needs Attention" if hangs < 3 else "🔴 Critical"
+                else:
+                    health_status = "🟢 Healthy"
+
+                click.echo("
+🏥 System Health:"                click.echo(f"   📊 Status: {health_status}")
+                click.echo(f"   🚨 Recent Hangs: {hangs}")
+                click.echo(f"   🛠️  Auto Interventions: {interventions}")
+
+            # Show timestamp
+            from datetime import datetime
+            click.echo(f"\n🕐 Last Updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+
+            if refresh == 0:
+                break
+            elif refresh > 0:
+                click.echo(f"\n⏰ Refreshing in {refresh} seconds... (Ctrl+C to exit)")
+                import time
+                time.sleep(refresh)
+
+    except KeyboardInterrupt:
+        click.echo("\n👋 Dashboard stopped by user")
+    except Exception as e:
+        click.secho(f"❌ Error in dashboard: {e}", fg="red")
+    finally:
+        # Clean up monitoring
+        engine.stop_job_monitoring()
+
+
 @job.command(name="activate")
 @click.argument("job_id", required=False)
 @click.option(
