@@ -107,14 +107,14 @@ Implement a robust Logist system with decoupled Agent/Runtime architecture, pers
     - Files to modify: None
     - Dependencies: Phase 1.2, 4.1
     - Estimated time: 4 hours
-    - Status: [ ] Not Started
+    - Status: [x] Completed
 
 13. **Integrate Sentinel with Core Engine**
     - Files to modify: `src/logist/core_engine.py`
     - Files to create: None
     - Dependencies: Phase 5.1
     - Estimated time: 2 hours
-    - Status: [ ] Not Started
+    - Status: [x] Completed
 
 ### Phase 6: CLI Integration & Commands
 14. **Extend CLI for Job Attach/Recovery**

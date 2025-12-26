@@ -27,12 +27,21 @@ except ImportError:
     DetectionConfidence = None
     OBSERVER_AVAILABLE = False
 
+# Optional sentinel integration for hang detection and monitoring
+try:
+    from .core.sentinel import ExecutionSentinel, SentinelConfig
+    SENTINEL_AVAILABLE = True
+except ImportError:
+    ExecutionSentinel = None
+    SentinelConfig = None
+    SENTINEL_AVAILABLE = False
+
 
 class LogistEngine:
     """Orchestration engine for Logist jobs."""
 
     def __init__(self):
-        """Initialize the LogistEngine with optional observer integration."""
+        """Initialize the LogistEngine with optional observer and sentinel integration."""
         self.observer = None
         if OBSERVER_AVAILABLE:
             try:
@@ -40,6 +49,16 @@ class LogistEngine:
             except Exception as e:
                 print(f"⚠️  Observer initialization failed: {e}")
                 self.observer = None
+
+        self.sentinel = None
+        if SENTINEL_AVAILABLE:
+            try:
+                # Initialize sentinel with default config - can be customized later
+                sentinel_config = SentinelConfig()
+                self.sentinel = ExecutionSentinel("", sentinel_config)  # Empty base_jobs_dir for now
+            except Exception as e:
+                print(f"⚠️  Sentinel initialization failed: {e}")
+                self.sentinel = None
 
     def _collect_execution_logs(self, job_dir: str, processed_response: Dict[str, Any]) -> str:
         """
@@ -369,6 +388,104 @@ class LogistEngine:
                 raw_cline_output = e.full_output # If CLINE execution failed, this might be present
             handle_execution_error(job_dir, job_id, e, raw_output=raw_cline_output)
             return False
+
+    def initialize_sentinel(self, base_jobs_dir: str, config: Optional["SentinelConfig"] = None) -> None:
+        """
+        Initialize or reconfigure the sentinel with the correct base jobs directory.
+
+        Args:
+            base_jobs_dir: Base directory containing job directories
+            config: Optional sentinel configuration
+        """
+        if not SENTINEL_AVAILABLE:
+            return
+
+        try:
+            if config is None:
+                config = SentinelConfig()
+
+            if self.sentinel is None:
+                self.sentinel = ExecutionSentinel(base_jobs_dir, config)
+            else:
+                # Reinitialize with new base directory
+                self.sentinel.base_jobs_dir = base_jobs_dir
+                self.sentinel.config = config
+                self.sentinel.dir_manager = self.sentinel.dir_manager.__class__(base_jobs_dir)
+                self.sentinel.lock_manager = self.sentinel.lock_manager.__class__(base_jobs_dir)
+
+        except Exception as e:
+            print(f"⚠️  Sentinel initialization failed: {e}")
+            self.sentinel = None
+
+    def start_job_monitoring(self, job_id: str = None) -> bool:
+        """
+        Start sentinel monitoring for jobs.
+
+        Args:
+            job_id: Optional specific job to monitor, or None for all active jobs
+
+        Returns:
+            True if monitoring started successfully
+        """
+        if not self.sentinel:
+            return False
+
+        try:
+            if not self.sentinel.state.value == "monitoring":
+                self.sentinel.start_monitoring()
+
+            if job_id:
+                self.sentinel.add_job(job_id)
+
+            return True
+        except Exception as e:
+            print(f"⚠️  Failed to start job monitoring: {e}")
+            return False
+
+    def stop_job_monitoring(self) -> bool:
+        """
+        Stop sentinel monitoring.
+
+        Returns:
+            True if monitoring stopped successfully
+        """
+        if not self.sentinel:
+            return False
+
+        try:
+            self.sentinel.stop_monitoring()
+            return True
+        except Exception as e:
+            print(f"⚠️  Failed to stop job monitoring: {e}")
+            return False
+
+    def update_job_activity(self, job_id: str) -> None:
+        """
+        Update activity timestamp for a job to prevent timeout detection.
+
+        Args:
+            job_id: Job identifier
+        """
+        if self.sentinel:
+            try:
+                self.sentinel.update_activity(job_id)
+            except Exception:
+                pass  # Don't fail if sentinel update fails
+
+    def get_sentinel_status(self) -> Optional[Dict[str, Any]]:
+        """
+        Get the current sentinel status report.
+
+        Returns:
+            Status report dictionary or None if sentinel unavailable
+        """
+        if not self.sentinel:
+            return None
+
+        try:
+            return self.sentinel.get_status_report()
+        except Exception as e:
+            return {"error": str(e), "state": "error"}
 
     def run_job(self, ctx: Any, job_id: str, job_dir: str) -> bool:
         """
