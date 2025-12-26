@@ -70,21 +70,21 @@ Implement a robust Logist system with decoupled Agent/Runtime architecture, pers
    - Files to modify: `src/logist/job_state.py` (extend existing)
    - Dependencies: None
    - Estimated time: 3 hours
-   - Status: [ ] Not Started
+   - Status: [x] Completed
 
 8. **Implement Advisory File Locking**
    - Files to create: `src/logist/core/locking.py`
    - Files to modify: None
    - Dependencies: Phase 3.1
    - Estimated time: 2 hours
-   - Status: [ ] Not Started
+   - Status: [x] Completed
 
 9. **Job Recovery Logic**
    - Files to create: `src/logist/core/recovery.py`
    - Files to modify: `src/logist/recovery.py` (extend existing)
    - Dependencies: Phase 3.1, 3.2
    - Estimated time: 4 hours
-   - Status: [ ] Not Started
+   - Status: [x] Completed
 
 ### Phase 4: Logist Intelligence (Regex Dictionary)
 10. **Implement Observer Module**
