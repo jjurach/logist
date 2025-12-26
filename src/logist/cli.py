@@ -2003,19 +2003,19 @@ def recover_job(ctx, job_id: str | None, force: bool, all: bool):
             force=force
         )
 
-        click.echo("
-📊 Bulk Recovery Results:"        click.echo(f"   ✅ Successful recoveries: {recovery_result['successful_recoveries']}")
+        click.echo("\n📊 Bulk Recovery Results:")
+        click.echo(f"   ✅ Successful recoveries: {recovery_result['successful_recoveries']}")
         click.echo(f"   ❌ Failed recoveries: {recovery_result['failed_recoveries']}")
         click.echo(f"   📊 Total processed: {recovery_result['total_jobs_processed']}")
 
         if recovery_result["job_results"]:
-            click.echo("
-📋 Recovery Details:"            for job_result in recovery_result["job_results"]:
-                job_id_result = job_result.get("job_id", "unknown")
-                if job_result.get("recovered"):
-                    click.secho(f"   ✅ {job_id_result}: Recovered", fg="green")
-                else:
-                    click.secho(f"   ❌ {job_id_result}: {job_result.get('errors', ['Unknown error'])[0]}", fg="red")
+            click.echo("\n📋 Recovery Details:")
+            for job_result in recovery_result["job_results"]:
+                        job_id_result = job_result.get("job_id", "unknown")
+                        if job_result.get("recovered"):
+                            click.secho(f"   ✅ {job_id_result}: Recovered", fg="green")
+            else:
+                        click.secho(f"   ❌ {job_id_result}: {job_result.get('errors', ['Unknown error'])[0]}", fg="red")
 
         return
 
@@ -2106,7 +2106,7 @@ def dashboard(ctx, jobs_dir: str, refresh: int, compact: bool):
             # Get sentinel status
             sentinel_status = engine.get_sentinel_status()
             if sentinel_status:
-                click.echo("🔍 Execution Sentinel Status:"                click.echo(f"   📊 State: {sentinel_status.get('state', 'unknown')}")
+                click.echo("🔍 Execution Sentinel Status:")
                 click.echo(f"   🎯 Active Jobs: {sentinel_status.get('active_jobs', 0)}")
                 click.echo(f"   🚨 Hangs Detected: {sentinel_status.get('hangs_detected', 0)}")
                 click.echo(f"   🛠️  Interventions: {sentinel_status.get('interventions_performed', 0)}")
@@ -2138,8 +2138,7 @@ def dashboard(ctx, jobs_dir: str, refresh: int, compact: bool):
                     elif status == 'PENDING':
                         pending_jobs.append(job)
 
-                click.echo("
-📈 Job Statistics:"                click.echo(f"   📊 Total Jobs: {total_jobs}")
+                click.echo("\n📈 Job Statistics:")
 
                 if status_counts:
                     click.echo("   📋 Status Breakdown:")
@@ -2175,8 +2174,7 @@ def dashboard(ctx, jobs_dir: str, refresh: int, compact: bool):
                 else:
                     health_status = "🟢 Healthy"
 
-                click.echo("
-🏥 System Health:"                click.echo(f"   📊 Status: {health_status}")
+                click.echo("\n🏥 System Health:")
                 click.echo(f"   🚨 Recent Hangs: {hangs}")
                 click.echo(f"   🛠️  Auto Interventions: {interventions}")
 
@@ -2355,6 +2353,142 @@ def activate_job(ctx, job_id: str | None, rank: int):
 
     except (click.ClickException, Exception) as e:
         click.secho(f"❌ Error during job activation: {e}", fg="red")
+        raise
+
+
+@job.command(name="suspend")
+@click.argument("job_id", required=False)
+@click.pass_context
+def suspend_job(ctx, job_id: str | None):
+    """Temporarily suspend a job from execution queue."""
+    click.echo("⏸️  Executing 'logist job suspend'")
+
+    # Get job ID
+    final_job_id = get_job_id(ctx, job_id)
+    if not final_job_id:
+        raise click.ClickException("❌ No job ID provided and no current job is selected.")
+
+    job_dir = get_job_dir(ctx, final_job_id)
+    if not job_dir:
+        raise click.ClickException(f"❌ Job '{final_job_id}' not found.")
+
+    try:
+        # Load current job manifest
+        manifest = load_job_manifest(job_dir)
+        current_status = manifest.get("status", "UNKNOWN")
+
+        # Check if job can be suspended
+        if current_status in [JobStates.SUCCESS, JobStates.CANCELED, JobStates.FAILED]:
+            raise click.ClickException(f"❌ Job '{final_job_id}' is in terminal state '{current_status}' and cannot be suspended.")
+
+        # Update job status to SUSPENDED
+        update_job_manifest(job_dir=job_dir, new_status=JobStates.SUSPENDED)
+
+        # Remove from execution queue if present
+        jobs_dir = ctx.obj["JOBS_DIR"]
+        jobs_index_path = os.path.join(jobs_dir, "jobs_index.json")
+
+        try:
+            with open(jobs_index_path, 'r') as f:
+                jobs_index = json.load(f)
+
+            queue = jobs_index.get("queue", [])
+            if final_job_id in queue:
+                queue.remove(final_job_id)
+                # Save updated jobs index
+                with open(jobs_index_path, 'w') as f:
+                    json.dump(jobs_index, f, indent=2)
+                click.echo(f"   📋 Removed from execution queue")
+        except (json.JSONDecodeError, OSError):
+            # Queue update is best-effort
+            pass
+
+        click.secho(f"   ✅ Job '{final_job_id}' suspended successfully!", fg="green")
+        click.echo(f"   🔄 Status changed: {current_status} → {JobStates.SUSPENDED}")
+        click.echo("   💡 Use 'logist job resume' to resume execution")
+
+    except (click.ClickException, Exception) as e:
+        click.secho(f"❌ Error during job suspension: {e}", fg="red")
+        raise
+
+
+@job.command(name="resume")
+@click.argument("job_id", required=False)
+@click.option(
+    "--rank",
+    type=int,
+    help="Queue position for resumed job (0=front, -1=end). Default: append to end."
+)
+@click.pass_context
+def resume_job(ctx, job_id: str | None, rank: int):
+    """Resume a suspended job and add back to execution queue."""
+    click.echo("▶️  Executing 'logist job resume'")
+
+    # Get job ID
+    final_job_id = get_job_id(ctx, job_id)
+    if not final_job_id:
+        raise click.ClickException("❌ No job ID provided and no current job is selected.")
+
+    job_dir = get_job_dir(ctx, final_job_id)
+    if not job_dir:
+        raise click.ClickException(f"❌ Job '{final_job_id}' not found.")
+
+    try:
+        # Load current job manifest
+        manifest = load_job_manifest(job_dir)
+        current_status = manifest.get("status", "UNKNOWN")
+
+        # Check if job is actually suspended
+        if current_status != JobStates.SUSPENDED:
+            raise click.ClickException(f"❌ Job '{final_job_id}' is not suspended (current status: '{current_status}').")
+
+        # Determine appropriate target state based on job's previous state
+        # For now, we'll transition to PENDING as the default resume state
+        new_status = JobStates.PENDING
+
+        # Update job status
+        update_job_manifest(job_dir=job_dir, new_status=new_status)
+
+        # Add back to execution queue
+        jobs_dir = ctx.obj["JOBS_DIR"]
+        jobs_index_path = os.path.join(jobs_dir, "jobs_index.json")
+
+        try:
+            with open(jobs_index_path, 'r') as f:
+                jobs_index = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            jobs_index = {"current_job_id": None, "jobs": {}}
+
+        # Initialize queue if not present
+        if "queue" not in jobs_index:
+            jobs_index["queue"] = []
+
+        # Remove from queue if already present (shouldn't be)
+        queue = jobs_index.get("queue", [])
+        if final_job_id in queue:
+            queue.remove(final_job_id)
+
+        # Insert job at specified rank or append to end
+        if rank is not None:
+            if rank == -1 or rank >= len(queue):
+                queue.append(final_job_id)
+            else:
+                actual_rank = min(rank, len(queue))
+                queue.insert(actual_rank, final_job_id)
+        else:
+            queue.append(final_job_id)
+
+        # Save updated jobs index
+        with open(jobs_index_path, 'w') as f:
+            json.dump(jobs_index, f, indent=2)
+
+        final_position = queue.index(final_job_id)
+        click.secho(f"   ✅ Job '{final_job_id}' resumed successfully!", fg="green")
+        click.echo(f"   🔄 Status changed: {JobStates.SUSPENDED} → {new_status}")
+        click.echo(f"   📊 Queue position: {final_position}")
+
+    except (click.ClickException, Exception) as e:
+        click.secho(f"❌ Error during job resume: {e}", fg="red")
         raise
 
 

@@ -15,8 +15,14 @@ These states describe the normal, automated execution path of a task.
 
 * **PENDING**
     * **Description:** The task is ready to run but is waiting for the scheduler or for its dependencies to complete.
-    * **Transition From:** DRAFT (activated), DEPENDENCIES\_MET, RESUBMIT.
+    * **Transition From:** DRAFT (activated), SUSPENDED (resumed), DEPENDENCIES\_MET, RESUBMIT.
     * **Next Automated States:** RUNNING, CANCELED.
+
+* **SUSPENDED**
+    * **Description:** The task is intentionally paused by the scheduler or an external command (e.g., administrative intervention, resource constraints).
+    * **Transition From:** Any active state (DRAFT, PENDING, RUNNING, etc.) via suspend command.
+    * **Next Automated States:** PENDING (via resume command), CANCELED (via administrative action).
+    * **Purpose:** Allows temporary exclusion from execution while preserving state for resumption.
 
 * **RUNNING**
     * **Description:** An agent is actively executing (Worker by default, but may be Supervisor depending on state transitions).
@@ -123,7 +129,7 @@ These are the commands that an external party (human or repair agent) issues to 
 The current state of a job is persisted to the filesystem to ensure that workflows can be resumed.
 
 -   **Location**: The state is stored within the **`job_manifest.json`** file, which resides inside each job's specific directory.
--   **Mechanism**: A dedicated `"status"` field in the JSON manifest holds the current state value (e.g., `"PENDING"`, `"RUNNING"`, `"STUCK"`). The Logist engine reads this field at the start of any operation and updates it upon every state transition.
+-   **Mechanism**: A dedicated `"status"` field in the JSON manifest holds the current state value (e.g., `"PENDING"`, `"RUNNING"`, `"SUSPENDED"`). The Logist engine reads this field at the start of any operation and updates it upon every state transition.
 
 ### Example `job_manifest.json`
 
@@ -131,7 +137,7 @@ The current state of a job is persisted to the filesystem to ensure that workflo
 {
   "job_id": "sample-implementation",
   "description": "Sample job demonstrating logist workflow...",
-  "status": "STUCK",
+  "status": "SUSPENDED",
   "current_phase": "implementation",
   "metrics": {
     "cumulative_cost": 22,
@@ -145,9 +151,41 @@ The current state of a job is persisted to the filesystem to ensure that workflo
     },
     {
       "phase": "implementation",
-      "status": "STUCK",
-      "summary": "The generated code has a syntax error that I cannot resolve."
+      "status": "SUSPENDED",
+      "summary": "Job suspended for external review before continuing."
     }
   ]
 }
 ```
+
+---
+
+## 6. 🔄 State Transition Matrix
+
+| From State | To States | Trigger/Command |
+|------------|-----------|-----------------|
+| DRAFT | PENDING, SUSPENDED, CANCELED | `logist job activate`, `logist job suspend`, `logist job cancel` |
+| PENDING | RUNNING, SUSPENDED, CANCELED | Scheduler trigger, `logist job suspend`, `logist job cancel` |
+| SUSPENDED | PENDING, CANCELED | `logist job resume`, `logist job cancel` |
+| RUNNING | REVIEW_REQUIRED, SUSPENDED, CANCELED | Worker completion, `logist job suspend`, `logist job cancel` |
+| REVIEW_REQUIRED | REVIEWING, SUSPENDED, CANCELED | `logist job step`, `logist job suspend`, `logist job cancel` |
+| REVIEWING | APPROVAL_REQUIRED, INTERVENTION_REQUIRED, SUSPENDED, CANCELED | Supervisor completion, `logist job suspend`, `logist job cancel` |
+| APPROVAL_REQUIRED | SUCCESS, PENDING, SUSPENDED, CANCELED | `logist job approve`, `logist job reject`, `logist job suspend`, `logist job cancel` |
+| INTERVENTION_REQUIRED | PENDING, REVIEW_REQUIRED, SUSPENDED, CANCELED | Human intervention, `logist job suspend`, `logist job cancel` |
+| SUCCESS | *Terminal State* | Job completed successfully |
+| CANCELED | *Terminal State* | Job terminated by user |
+| FAILED | *Terminal State* | Job failed (deprecated but kept for compatibility) |
+
+### Attach/Recover Session States
+
+| From State | To States | Trigger/Command |
+|------------|-----------|-----------------|
+| DETACHED | ATTACHED | `logist job attach <job_id>` |
+| ATTACHED | SUPERVISOR_REVIEW, SUSPENDED, DETACHED | Start cycle, `logist job suspend`, `logist job detach` |
+| SUPERVISOR_REVIEW | CODER_IMPLEMENTATION, SUSPENDED, INTERVENTION_REQUIRED, DETACHED | Ready to implement, `logist job suspend`, `logist job detach` |
+| CODER_IMPLEMENTATION | VALIDATION_PENDING, SUPERVISOR_REVIEW, SUSPENDED, DETACHED | Implementation done, `logist job suspend`, `logist job detach` |
+| VALIDATION_PENDING | SUPERVISOR_VALIDATION, CODER_IMPLEMENTATION, DETACHED | Ready to validate, issues found, `logist job detach` |
+| SUPERVISOR_VALIDATION | SUCCESS, CODER_IMPLEMENTATION, SUPERVISOR_REVIEW, INTERVENTION_REQUIRED, DETACHED | Approved, revisions needed, architecture change, help needed, `logist job detach` |
+| INTERVENTION_REQUIRED | SUPERVISOR_REVIEW, FAILED, DETACHED | Human guidance provided, cannot resolve, `logist job detach` |
+| SUCCESS | DETACHED | Session complete |
+| FAILED | DETACHED | Unresolvable issues |

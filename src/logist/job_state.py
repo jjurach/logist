@@ -16,6 +16,9 @@ class JobStates:
     # Ready for execution - job is waiting to run
     PENDING = "PENDING"
 
+    # Temporarily suspended - job should be skipped by scheduler
+    SUSPENDED = "SUSPENDED"
+
     # Core execution states
     RUNNING = "RUNNING"
     PAUSED = "PAUSED"
@@ -28,6 +31,10 @@ class JobStates:
     REVIEWING = "REVIEWING"
     APPROVAL_REQUIRED = "APPROVAL_REQUIRED"
     INTERVENTION_REQUIRED = "INTERVENTION_REQUIRED"
+
+    # Attach/recover session states
+    ATTACHED = "ATTACHED"
+    DETACHED = "DETACHED"
 
 def load_job_manifest(job_dir: str) -> Dict[str, Any]:
     """
@@ -99,7 +106,7 @@ def transition_state(current_status: str, agent_role: str, response_action: str)
     Args:
         current_status: Current job status (e.g., "DRAFT", "PENDING", "RUNNING").
         agent_role: The agent that executed ("Worker" or "Supervisor").
-        response_action: LLM response action ("COMPLETED", "STUCK", "RETRY", "ACTIVATED").
+        response_action: LLM response action ("COMPLETED", "STUCK", "RETRY", "ACTIVATED", "SUSPEND", "RESUME").
 
     Returns:
         The next status string.
@@ -112,6 +119,18 @@ def transition_state(current_status: str, agent_role: str, response_action: str)
     transitions = {
         # DRAFT state transitions (only ACTIVATED is allowed from DRAFT)
         (JobStates.DRAFT, "System", "ACTIVATED"): JobStates.PENDING,
+
+        # SUSPENDED state transitions - can suspend from most states
+        (JobStates.DRAFT, "System", "SUSPEND"): JobStates.SUSPENDED,
+        (JobStates.PENDING, "System", "SUSPEND"): JobStates.SUSPENDED,
+        (JobStates.RUNNING, "System", "SUSPEND"): JobStates.SUSPENDED,
+        (JobStates.REVIEW_REQUIRED, "System", "SUSPEND"): JobStates.SUSPENDED,
+        (JobStates.REVIEWING, "System", "SUSPEND"): JobStates.SUSPENDED,
+        (JobStates.APPROVAL_REQUIRED, "System", "SUSPEND"): JobStates.SUSPENDED,
+        (JobStates.INTERVENTION_REQUIRED, "System", "SUSPEND"): JobStates.SUSPENDED,
+
+        # Resume transitions - SUSPENDED can resume to various states
+        (JobStates.SUSPENDED, "System", "RESUME"): JobStates.PENDING,  # Default resume target
 
         # PENDING and execution transitions
         (JobStates.PENDING, "Worker", "COMPLETED"): JobStates.RUNNING,  # Should actually go to REVIEW_REQUIRED after worker
@@ -137,6 +156,12 @@ def transition_state(current_status: str, agent_role: str, response_action: str)
         return "INTERVENTION_REQUIRED"
     elif response_action == "RETRY":
         return current_status  # Stay in current state for retry
+    elif response_action == "SUSPEND":
+        # Allow suspension from any state not already handled above
+        if current_status not in [JobStates.SUSPENDED, JobStates.SUCCESS, JobStates.CANCELED, JobStates.FAILED]:
+            return JobStates.SUSPENDED
+        else:
+            raise JobStateError(f"Cannot suspend job in state: {current_status}")
     else:
         raise JobStateError(f"Invalid state transition: {current_status} + {agent_role} + {response_action}")
 
@@ -227,6 +252,90 @@ def get_error_recovery_options(current_status: str) -> Dict[str, Any]:
     return recovery_options.get(current_status, {
         "description": "Unknown error state - manual intervention required"
     })
+
+
+def validate_state_transition(current_status: str, target_status: str, agent_role: str = "System", action: str = "") -> bool:
+    """
+    Comprehensive validation of state transitions according to the enhanced state machine.
+
+    Args:
+        current_status: Current job status.
+        target_status: Target status for transition.
+        agent_role: Agent role performing the action (default: "System").
+        action: Action being performed (for logging/validation).
+
+    Returns:
+        True if transition is valid, False otherwise.
+
+    Raises:
+        JobStateError: If transition violates state machine rules.
+    """
+    # Terminal states - cannot transition out of these
+    terminal_states = {JobStates.SUCCESS, JobStates.CANCELED, JobStates.FAILED}
+    if current_status in terminal_states:
+        if target_status != current_status:
+            raise JobStateError(f"Cannot transition out of terminal state '{current_status}'")
+
+    # SUSPENDED state validation
+    if current_status == JobStates.SUSPENDED:
+        valid_resume_targets = {JobStates.PENDING, JobStates.CANCELED}
+        if target_status not in valid_resume_targets:
+            raise JobStateError(f"SUSPENDED jobs can only resume to {valid_resume_targets}, not '{target_status}'")
+
+    # DRAFT state validation - very restrictive
+    if current_status == JobStates.DRAFT:
+        valid_draft_targets = {JobStates.PENDING, JobStates.SUSPENDED, JobStates.CANCELED}
+        if target_status not in valid_draft_targets:
+            raise JobStateError(f"DRAFT jobs can only transition to {valid_draft_targets}, not '{target_status}'")
+
+    # PENDING state validation
+    if current_status == JobStates.PENDING:
+        valid_pending_targets = {JobStates.RUNNING, JobStates.SUSPENDED, JobStates.CANCELED}
+        if target_status not in valid_pending_targets:
+            raise JobStateError(f"PENDING jobs can only transition to {valid_pending_targets}, not '{target_status}'")
+
+    # RUNNING state validation
+    if current_status == JobStates.RUNNING:
+        valid_running_targets = {JobStates.REVIEW_REQUIRED, JobStates.SUSPENDED, JobStates.CANCELED, JobStates.INTERVENTION_REQUIRED}
+        if target_status not in valid_running_targets:
+            raise JobStateError(f"RUNNING jobs can only transition to {valid_running_targets}, not '{target_status}'")
+
+    # REVIEW_REQUIRED state validation
+    if current_status == JobStates.REVIEW_REQUIRED:
+        valid_review_targets = {JobStates.REVIEWING, JobStates.SUSPENDED, JobStates.CANCELED}
+        if target_status not in valid_review_targets:
+            raise JobStateError(f"REVIEW_REQUIRED jobs can only transition to {valid_review_targets}, not '{target_status}'")
+
+    # REVIEWING state validation
+    if current_status == JobStates.REVIEWING:
+        valid_reviewing_targets = {JobStates.APPROVAL_REQUIRED, JobStates.INTERVENTION_REQUIRED, JobStates.SUSPENDED, JobStates.CANCELED}
+        if target_status not in valid_reviewing_targets:
+            raise JobStateError(f"REVIEWING jobs can only transition to {valid_reviewing_targets}, not '{target_status}'")
+
+    # APPROVAL_REQUIRED state validation
+    if current_status == JobStates.APPROVAL_REQUIRED:
+        valid_approval_targets = {JobStates.SUCCESS, JobStates.PENDING, JobStates.SUSPENDED, JobStates.CANCELED}
+        if target_status not in valid_approval_targets:
+            raise JobStateError(f"APPROVAL_REQUIRED jobs can only transition to {valid_approval_targets}, not '{target_status}'")
+
+    # INTERVENTION_REQUIRED state validation
+    if current_status == JobStates.INTERVENTION_REQUIRED:
+        valid_intervention_targets = {JobStates.PENDING, JobStates.REVIEW_REQUIRED, JobStates.SUSPENDED, JobStates.CANCELED}
+        if target_status not in valid_intervention_targets:
+            raise JobStateError(f"INTERVENTION_REQUIRED jobs can only transition to {valid_intervention_targets}, not '{target_status}'")
+
+    # ATTACHED/DETACHED validation for attach/recover sessions
+    if current_status == JobStates.ATTACHED:
+        valid_attached_targets = {JobStates.SUPERVISOR_REVIEW, JobStates.SUSPENDED, JobStates.DETACHED}
+        if target_status not in valid_attached_targets:
+            raise JobStateError(f"ATTACHED sessions can only transition to {valid_attached_targets}, not '{target_status}'")
+
+    if current_status == JobStates.DETACHED:
+        # DETACHED is a terminal state for attach sessions
+        if target_status != JobStates.DETACHED:
+            raise JobStateError(f"DETACHED sessions cannot transition to other states")
+
+    return True
 
 
 def validate_error_transition(current_status: str, target_status: str) -> bool:

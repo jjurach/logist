@@ -563,6 +563,12 @@ COMMIT;
 - Suggest improvements when appropriate
 - Explain your reasoning for decisions
 
+### Notification
+**AI AGENT INSTRUCTIONS:** Be clear and helpful.
+
+- Use the slack-notifications mcp service each time you commit to local git
+  repo to summarize similar information to the default slack channel
+
 ---
 
 ## Emergency Procedures
@@ -647,5 +653,6 @@ Request → Analysis → Plan → Approval → Implementation → Documentation
 - **Always document changes**
 - **Test before proceeding**
 - **Maintain code quality**
+- **Notify using the slack-notifications mcp service**
 
 **Remember: It's better to ask for clarification than to make assumptions!**
