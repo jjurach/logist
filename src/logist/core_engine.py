@@ -18,9 +18,78 @@ from logist.job_processor import (
 from logist.job_context import assemble_job_context, JobContextError
 from logist.services import JobManagerService
 
+# Optional observer integration for intelligent state detection
+try:
+    from .core.observer import LogistObserver, DetectionConfidence
+    OBSERVER_AVAILABLE = True
+except ImportError:
+    LogistObserver = None
+    DetectionConfidence = None
+    OBSERVER_AVAILABLE = False
+
 
 class LogistEngine:
     """Orchestration engine for Logist jobs."""
+
+    def __init__(self):
+        """Initialize the LogistEngine with optional observer integration."""
+        self.observer = None
+        if OBSERVER_AVAILABLE:
+            try:
+                self.observer = LogistObserver()
+            except Exception as e:
+                print(f"⚠️  Observer initialization failed: {e}")
+                self.observer = None
+
+    def _collect_execution_logs(self, job_dir: str, processed_response: Dict[str, Any]) -> str:
+        """
+        Collect execution logs and output for observer analysis.
+
+        Args:
+            job_dir: Job directory path
+            processed_response: Processed LLM response
+
+        Returns:
+            Combined log content for analysis
+        """
+        log_parts = []
+
+        # Add the LLM summary
+        summary = processed_response.get("summary_for_supervisor", "")
+        if summary:
+            log_parts.append(f"Summary: {summary}")
+
+        # Add the action taken
+        action = processed_response.get("action", "")
+        if action:
+            log_parts.append(f"Action: {action}")
+
+        # Add evidence files mentioned
+        evidence_files = processed_response.get("evidence_files", [])
+        if evidence_files:
+            log_parts.append(f"Evidence files: {', '.join(evidence_files)}")
+
+        # Try to read recent log entries from jobHistory.json
+        history_path = os.path.join(job_dir, "jobHistory.json")
+        if os.path.exists(history_path):
+            try:
+                with open(history_path, 'r') as f:
+                    history = json.load(f)
+                    if isinstance(history, list) and history:
+                        # Get the most recent entries (last 3)
+                        recent_entries = history[-3:]
+                        for entry in recent_entries:
+                            if isinstance(entry, dict):
+                                event_type = entry.get("event", "log")
+                                summary = entry.get("summary", entry.get("response", {}).get("summary_for_supervisor", ""))
+                                action = entry.get("action", entry.get("response", {}).get("action", ""))
+                                if summary or action:
+                                    log_parts.append(f"{event_type}: {summary or action}")
+            except (json.JSONDecodeError, OSError):
+                pass  # Ignore log reading errors
+
+        # Combine all log parts
+        return "\n".join(log_parts)
 
     def _write_job_history_entry(self, job_dir: str, entry: dict) -> None:
         """Write a job history entry to jobHistory.json."""
@@ -246,7 +315,32 @@ class LogistEngine:
             )
             print(f"   🔄 Job status updated to: {new_status}")
 
-            # 12. Perform git commit for evidence files and changes
+            # 12. Observer Integration: Analyze execution results
+            if self.observer and ctx.obj.get("OBSERVER", True):
+                try:
+                    # Collect logs from the execution for analysis
+                    log_content = self._collect_execution_logs(job_dir, processed_response)
+                    observation = self.observer.observe_job_state(
+                        job_id=job_id,
+                        log_content=log_content,
+                        current_state=current_status
+                    )
+
+                    # Log observer insights
+                    if observation["inferred_state"] and observation["inferred_state"] != current_status:
+                        print(f"   👁️  Observer suggests state: {observation['inferred_state']} "
+                              f"(confidence: {observation['confidence'].value})")
+
+                    if observation["recommendations"]:
+                        print(f"   💡 Observer recommendations: {len(observation['recommendations'])}")
+                        for rec in observation["recommendations"][:2]:  # Show first 2
+                            print(f"      • {rec}")
+
+                except Exception as e:
+                    print(f"   ⚠️  Observer analysis failed: {e}")
+                    # Don't fail execution for observer issues
+
+            # 13. Perform git commit for evidence files and changes
             try:
                 commit_summary = processed_response.get("summary_for_supervisor", f"{active_role} step: {current_phase_name}")
                 commit_result = workspace_utils.perform_git_commit(
