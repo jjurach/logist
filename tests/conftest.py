@@ -14,6 +14,14 @@ from pathlib import Path
 from src.logist.agents.mock import MockAgent
 from src.logist.runtimes.host import HostRuntime
 
+# Import new mock agent framework
+from tests.test_utils.mock_agent_utils import (
+    mock_agent_helper,
+    mock_worker_agent,
+    mock_supervisor_agent,
+    deterministic_mock_worker
+)
+
 
 @pytest.fixture
 def mock_runtime():
