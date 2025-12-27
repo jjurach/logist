@@ -55,11 +55,11 @@ class TestAgentRuntimeIntegration:
             process_id = mock_runtime.spawn(cmd, env)
 
             # Check logs at different points
-            time.sleep(1)
+            time.sleep(0.25)
             early_logs = mock_runtime.get_logs(process_id)
             assert "Thinking..." in early_logs
 
-            time.sleep(2)
+            time.sleep(0.5)
             middle_logs = mock_runtime.get_logs(process_id)
             assert len(middle_logs) > len(early_logs)  # More logs accumulated
 
@@ -88,7 +88,7 @@ class TestAgentRuntimeIntegration:
             process_id = mock_runtime.spawn(cmd, env)
 
             # Let it start
-            time.sleep(2)
+            time.sleep(0.5)
             assert mock_runtime.is_alive(process_id)
 
             # Test graceful termination (SIGTERM)
@@ -96,7 +96,7 @@ class TestAgentRuntimeIntegration:
             assert success
 
             # Wait a bit and verify it's dead
-            time.sleep(1)
+            time.sleep(0.25)
             assert not mock_runtime.is_alive(process_id)
 
         finally:
@@ -116,13 +116,13 @@ class TestAgentRuntimeIntegration:
             env = agent.env()
 
             process_id = mock_runtime.spawn(cmd, env)
-            time.sleep(2)
+            time.sleep(0.5)
 
             # Test forceful termination (SIGKILL)
             success = mock_runtime.terminate(process_id, force=True)
             assert success
 
-            time.sleep(0.5)
+            time.sleep(0.125)
             assert not mock_runtime.is_alive(process_id)
 
         finally:

@@ -42,6 +42,8 @@ class LogistEngine:
 
     def __init__(self):
         """Initialize the LogistEngine with optional observer and sentinel integration."""
+        self._job_workspace_setup_cache = {}  # Cache to track workspace setup per job
+
         self.observer = None
         if OBSERVER_AVAILABLE:
             try:
@@ -59,6 +61,44 @@ class LogistEngine:
             except Exception as e:
                 print(f"⚠️  Sentinel initialization failed: {e}")
                 self.sentinel = None
+
+    def ensure_job_workspace_ready(self, job_dir: str, debug: bool = False) -> None:
+        """
+        Ensure workspace is set up once per job, not per execution.
+
+        This method coordinates workspace setup at the job level to prevent
+        concurrent git operations that cause concurrency test hangs. Workspace
+        setup happens once when first needed, then is cached per engine instance.
+
+        Args:
+            job_dir: Job directory path
+            debug: Enable debug logging
+        """
+        job_id = os.path.basename(os.path.abspath(job_dir))
+
+        # Check if we've already coordinated setup for this job
+        if job_id in self._job_workspace_setup_cache:
+            if debug:
+                print(f"[DEBUG] Workspace setup already coordinated for job: {job_id}")
+            return
+
+        # Coordinate workspace setup for this job
+        if debug:
+            print(f"[DEBUG] Coordinating workspace setup for job: {job_id}")
+
+        try:
+            # Import services dynamically to avoid circular imports
+            from logist.services import JobManagerService
+            manager = JobManagerService()
+            manager.ensure_workspace_ready(job_dir, debug=debug)
+
+            # Mark as coordinated for this engine instance
+            self._job_workspace_setup_cache[job_id] = True
+
+        except Exception as e:
+            if debug:
+                print(f"[DEBUG] Workspace setup coordination failed for job {job_id}: {e}")
+            raise e
 
     def _collect_execution_logs(self, job_dir: str, processed_response: Dict[str, Any]) -> str:
         """
@@ -191,10 +231,9 @@ class LogistEngine:
 
     def step_job(self, ctx: Any, job_id: str, job_dir: str, dry_run: bool = False, model: str = "grok-code-fast-1") -> bool:
         """Execute single phase of job and pause with enhanced workspace preparation."""
-        # Import services dynamically to avoid circular imports
-        # from .services import JobManagerService
-        manager = JobManagerService()
-        manager.setup_workspace(job_dir) # Ensure workspace is ready
+        # Ensure workspace is ready (coordinated setup once per job)
+        debug_mode = ctx.obj.get("DEBUG", False)
+        self.ensure_job_workspace_ready(job_dir, debug=debug_mode)
 
         # Recovery validation - check for hung processes and recover if needed
         try:
@@ -494,10 +533,9 @@ class LogistEngine:
         This command orchestrates iterative worker and supervisor executions
         until the job reaches SUCCESS, CANCELED, INTERVENTION_REQUIRED, or APPROVAL_REQUIRED.
         """
-        # Import services dynamically to avoid circular imports
-        # from .services import JobManagerService
-        manager = JobManagerService()
-        manager.setup_workspace(job_dir)  # Ensure workspace is ready
+        # Ensure workspace is ready (coordinated setup once per job)
+        debug_mode = ctx.obj.get("DEBUG", False)
+        self.ensure_job_workspace_ready(job_dir, debug=debug_mode)
 
         # Define terminal states where execution stops
         TERMINAL_STATES = {"SUCCESS", "CANCELED", "INTERVENTION_REQUIRED", "APPROVAL_REQUIRED"}
@@ -592,10 +630,9 @@ class LogistEngine:
 
     def restep_single_step(self, ctx: Any, job_id: str, job_dir: str, step_number: int, dry_run: bool = False) -> bool:
         """Re-execute a specific single step (phase) of a job for debugging purposes."""
-        # Import services dynamically to avoid circular imports
-        # from .services import JobManagerService
-        manager = JobManagerService()
-        manager.setup_workspace(job_dir) # Ensure workspace is ready
+        # Ensure workspace is ready (coordinated setup once per job)
+        debug_mode = ctx.obj.get("DEBUG", False)
+        self.ensure_job_workspace_ready(job_dir, debug=debug_mode)
 
         if dry_run:
             print("   → Defensive setting detected: --dry-run")

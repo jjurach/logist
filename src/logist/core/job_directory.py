@@ -16,6 +16,7 @@ from typing import Dict, List, Optional, Tuple, Any
 from pathlib import Path
 
 from ..job_state import JobStateError
+from .locking import JobLockManager
 
 
 class JobDirectoryManager:
@@ -35,6 +36,7 @@ class JobDirectoryManager:
         """
         self.base_jobs_dir = Path(base_jobs_dir).resolve()
         self.jobs_index_path = self.base_jobs_dir / "jobs_index.json"
+        self._lock_manager = JobLockManager(str(self.base_jobs_dir))
 
     def ensure_base_structure(self) -> None:
         """
@@ -98,7 +100,7 @@ class JobDirectoryManager:
             with open(manifest_path, 'w') as f:
                 json.dump(manifest, f, indent=2)
 
-            # Update jobs index
+            # Update jobs index (thread-safe)
             self._add_job_to_index(job_id, manifest)
 
             return job_dir_str
@@ -108,6 +110,11 @@ class JobDirectoryManager:
             if job_dir.exists():
                 shutil.rmtree(job_dir)
             raise JobStateError(f"Failed to create job directory {job_dir_str}: {e}")
+        except Exception as e:
+            # Cleanup on any failure
+            if job_dir.exists():
+                shutil.rmtree(job_dir)
+            raise JobStateError(f"Unexpected error creating job directory {job_dir_str}: {e}")
 
     def _create_initial_manifest(self, job_id: str, job_config: Dict[str, Any]) -> Dict[str, Any]:
         """Create the initial job manifest."""
@@ -135,16 +142,13 @@ class JobDirectoryManager:
 
     def _add_job_to_index(self, job_id: str, manifest: Dict[str, Any]) -> None:
         """Add job to the jobs index."""
-        index_data = self._load_jobs_index()
+        with self._lock_manager.jobs_index_lock():
+            index_data = self._load_jobs_index()
 
-        index_data["jobs"][job_id] = {
-            "job_id": job_id,
-            "status": manifest["status"],
-            "created_at": manifest["created_at"],
-            "directory": str(self.base_jobs_dir / job_id)
-        }
+            # Store just the directory path for compatibility with JobManagerService
+            index_data["jobs"][job_id] = str(self.base_jobs_dir / job_id)
 
-        self._save_jobs_index(index_data)
+            self._save_jobs_index(index_data)
 
     def get_job_directory(self, job_id: str) -> str:
         """
@@ -179,14 +183,30 @@ class JobDirectoryManager:
         index_data = self._load_jobs_index()
         jobs = []
 
-        for job_id, job_info in index_data["jobs"].items():
-            if status_filter and job_info["status"] != status_filter:
+        for job_id, job_dir_path in index_data["jobs"].items():
+            # Load manifest to get status
+            manifest_path = Path(job_dir_path) / "job_manifest.json"
+            if manifest_path.exists():
+                try:
+                    with open(manifest_path, 'r') as f:
+                        manifest = json.load(f)
+                    status = manifest.get("status", "UNKNOWN")
+                except json.JSONDecodeError:
+                    status = "CORRUPTED"
+            else:
+                status = "MISSING_MANIFEST"
+
+            if status_filter and status != status_filter:
                 continue
 
             # Verify directory still exists
-            job_dir = Path(job_info["directory"])
+            job_dir = Path(job_dir_path)
             if job_dir.exists():
-                jobs.append(job_info.copy())
+                jobs.append({
+                    "job_id": job_id,
+                    "directory": job_dir_path,
+                    "status": status
+                })
 
         return jobs
 
@@ -313,23 +333,24 @@ class JobDirectoryManager:
 
     def _remove_job_from_index(self, job_id: str) -> None:
         """Remove job from the jobs index."""
-        index_data = self._load_jobs_index()
+        with self._lock_manager.jobs_index_lock():
+            index_data = self._load_jobs_index()
 
-        if job_id in index_data["jobs"]:
-            del index_data["jobs"][job_id]
+            if job_id in index_data["jobs"]:
+                del index_data["jobs"][job_id]
 
-        # Also remove from queue if present
-        if job_id in index_data["queue"]:
-            index_data["queue"].remove(job_id)
+            # Also remove from queue if present
+            if job_id in index_data["queue"]:
+                index_data["queue"].remove(job_id)
 
-        # Add to archived jobs
-        index_data["archived_jobs"].append({
-            "job_id": job_id,
-            "archived_at": datetime.now().isoformat(),
-            "reason": "cleanup"
-        })
+            # Add to archived jobs
+            index_data["archived_jobs"].append({
+                "job_id": job_id,
+                "archived_at": datetime.now().isoformat(),
+                "reason": "cleanup"
+            })
 
-        self._save_jobs_index(index_data)
+            self._save_jobs_index(index_data)
 
     def _load_jobs_index(self) -> Dict[str, Any]:
         """Load the jobs index file."""
@@ -363,8 +384,19 @@ class JobDirectoryManager:
             "archived_jobs": len(index_data["archived_jobs"])
         }
 
-        for job_info in jobs.values():
-            status = job_info["status"]
+        # Count status for each job by loading manifests
+        for job_id, job_dir_path in jobs.items():
+            manifest_path = Path(job_dir_path) / "job_manifest.json"
+            if manifest_path.exists():
+                try:
+                    with open(manifest_path, 'r') as f:
+                        manifest = json.load(f)
+                    status = manifest.get("status", "UNKNOWN")
+                except json.JSONDecodeError:
+                    status = "CORRUPTED"
+            else:
+                status = "MISSING_MANIFEST"
+
             stats["status_counts"][status] = stats["status_counts"].get(status, 0) + 1
 
         return stats

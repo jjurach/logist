@@ -287,7 +287,9 @@ class StatePatternDictionary:
                     pattern, match, text, context_state
                 )
 
-                if confidence.value > best_score:
+                # Convert enum to numeric value for comparison
+                confidence_value = confidence.value if hasattr(confidence, 'value') else confidence
+                if confidence_value > best_score:
                     best_detection = StateDetection(
                         state=detected_state,
                         confidence=confidence,
@@ -297,9 +299,22 @@ class StatePatternDictionary:
                         context={"original_text": text, "context_state": context_state},
                         metadata={"match_span": match.span(), "groups": match.groups()}
                     )
-                    best_score = confidence.value
+                    best_score = confidence_value
 
         return best_detection
+
+    def analyze_log_segment(self, log_lines: List[str], current_state: str = None) -> Dict[str, Any]:
+        """
+        Analyze log segment (compatibility method for tests).
+
+        Args:
+            log_lines: List of log lines to analyze
+            current_state: Current job state
+
+        Returns:
+            Analysis results
+        """
+        return self.pattern_dict.analyze_log_segment(log_lines, current_state)
 
     def _calculate_detection_confidence(self, pattern: RegexPattern, match: re.Match,
                                       text: str, context_state: str = None) -> Tuple[DetectionConfidence, str]:
@@ -614,3 +629,27 @@ class LogistObserver:
             filtered = self.observation_history
 
         return filtered[-limit:] if limit else filtered
+
+    def detect_state(self, log_content: str) -> Optional[StateDetection]:
+        """
+        Detect state from log content (compatibility method for tests).
+
+        Args:
+            log_content: Log content to analyze
+
+        Returns:
+            StateDetection if detected, None otherwise
+        """
+        return self.pattern_dict.detect_state(log_content)
+
+    def analyze_log_segment(self, log_lines: List[str]) -> Dict[str, Any]:
+        """
+        Analyze log segment (compatibility method for tests).
+
+        Args:
+            log_lines: List of log lines to analyze
+
+        Returns:
+            Analysis results
+        """
+        return self.pattern_dict.analyze_log_segment(log_lines)

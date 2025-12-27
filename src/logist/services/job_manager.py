@@ -6,6 +6,7 @@ Handles job creation, selection, and management operations.
 
 import json
 import os
+from datetime import datetime
 from typing import Dict, Any, List, Optional
 
 from logist import workspace_utils
@@ -30,11 +31,17 @@ class JobManagerService:
 
     def create_job(self, job_dir: str, jobs_dir: str) -> str:
         """Create or register a new job with manifest and directory structure."""
-        job_dir_abs = os.path.abspath(job_dir)
         jobs_dir_abs = os.path.abspath(jobs_dir)
 
-        # Derive job_id from directory name
-        job_id = os.path.basename(job_dir_abs)
+        # Handle job directory path resolution
+        if os.path.isabs(job_dir):
+            # Absolute path provided - use as-is for backward compatibility
+            job_dir_abs = job_dir
+            job_id = os.path.basename(job_dir_abs)
+        else:
+            # Relative path - create inside jobs_dir
+            job_id = job_dir  # Use the provided name as job_id
+            job_dir_abs = os.path.join(jobs_dir_abs, job_id)
 
         # Check if the job dir is inside the jobs_dir
         if os.path.dirname(job_dir_abs) != jobs_dir_abs:
@@ -44,7 +51,17 @@ class JobManagerService:
             print("    This is allowed, but not recommended for easier management.")
 
         # Ensure job directory exists
+        print(f"[DEBUG {datetime.now().strftime('%H:%M:%S.%f')}] Creating job directory: {job_dir_abs}")
         os.makedirs(job_dir_abs, exist_ok=True)
+        print(f"[DEBUG {datetime.now().strftime('%H:%M:%S.%f')}] Job directory created: {job_dir_abs}")
+
+        # Create standard subdirectories
+        subdirs = ["workspace", "logs", "backups", "temp"]
+        for subdir in subdirs:
+            subdir_path = os.path.join(job_dir_abs, subdir)
+            print(f"[DEBUG {datetime.now().strftime('%H:%M:%S.%f')}] Creating subdirectory: {subdir_path}")
+            os.makedirs(subdir_path, exist_ok=True)
+            print(f"[DEBUG {datetime.now().strftime('%H:%M:%S.%f')}] Subdirectory created: {subdir_path}")
 
         # Try to find and read job specification file
         job_spec = None
@@ -85,8 +102,10 @@ class JobManagerService:
                     job_manifest[key] = value
 
         # Write job manifest
+        print(f"[DEBUG {datetime.now().strftime('%H:%M:%S.%f')}] Writing job manifest: {manifest_path}")
         with open(manifest_path, 'w') as f:
             json.dump(job_manifest, f, indent=2)
+        print(f"[DEBUG {datetime.now().strftime('%H:%M:%S.%f')}] Job manifest written: {manifest_path}")
 
         # Update jobs_index.json
         jobs_index_path = os.path.join(jobs_dir, "jobs_index.json")
@@ -109,8 +128,10 @@ class JobManagerService:
         jobs_index["current_job_id"] = final_job_id
 
         # Write updated jobs index
+        print(f"[DEBUG {datetime.now().strftime('%H:%M:%S.%f')}] Writing jobs index: {jobs_index_path}")
         with open(jobs_index_path, 'w') as f:
             json.dump(jobs_index, f, indent=2)
+        print(f"[DEBUG {datetime.now().strftime('%H:%M:%S.%f')}] Jobs index written: {jobs_index_path}")
 
         return final_job_id
 
@@ -132,8 +153,10 @@ class JobManagerService:
         jobs_index["current_job_id"] = job_id
 
         try:
+            print(f"[DEBUG {datetime.now().strftime('%H:%M:%S.%f')}] Writing jobs index in select_job: {jobs_index_path}")
             with open(jobs_index_path, 'w') as f:
                 json.dump(jobs_index, f, indent=2)
+            print(f"[DEBUG {datetime.now().strftime('%H:%M:%S.%f')}] Jobs index written in select_job: {jobs_index_path}")
         except OSError as e:
             raise Exception(f"Failed to update jobs index: {e}")
 
@@ -161,7 +184,7 @@ class JobManagerService:
             if os.path.exists(manifest_path):
                 with open(manifest_path, 'r') as f:
                     manifest = json.load(f)
-                return manifest
+                return {"directory": job_dir, **manifest}  # Include directory in the return
             else:
                 raise Exception(f"Job manifest not found for '{job_id}' at {manifest_path}")
 
@@ -228,8 +251,10 @@ class JobManagerService:
             if queue_modified:
                 jobs_index["queue"] = cleaned_queue
                 try:
+                    print(f"[DEBUG {datetime.now().strftime('%H:%M:%S.%f')}] Writing jobs index in list_jobs (queue cleanup): {jobs_index_path}")
                     with open(jobs_index_path, 'w') as f:
                         json.dump(jobs_index, f, indent=2)
+                    print(f"[DEBUG {datetime.now().strftime('%H:%M:%S.%f')}] Jobs index written in list_jobs (queue cleanup): {jobs_index_path}")
                     queue = cleaned_queue  # Use cleaned queue for processing
                 except OSError:
                     # Failed to save cleanup, continue with original queue
@@ -304,3 +329,273 @@ class JobManagerService:
 
         except Exception as e:
             raise Exception(f"Advanced workspace setup failed: {e}")
+
+    def ensure_workspace_ready(self, job_dir: str, debug: bool = False) -> None:
+        """
+        Ensure workspace is set up and ready for job execution.
+
+        This method coordinates workspace setup to ensure it's only done once per job,
+        preventing concurrent setup operations that can cause hangs in tests.
+
+        Uses file-based locking to ensure atomicity across processes/threads.
+        """
+        import fcntl
+        import time
+
+        workspace_dir = os.path.join(job_dir, "workspace")
+        workspace_ready_file = os.path.join(workspace_dir, ".workspace_ready")
+        lock_file = os.path.join(workspace_dir, ".workspace_setup.lock")
+
+        # Check if workspace is already set up
+        if os.path.exists(workspace_ready_file):
+            if debug:
+                print(f"[DEBUG] Workspace already ready for job: {os.path.basename(job_dir)}")
+            return
+
+        # Ensure workspace directory exists
+        os.makedirs(workspace_dir, exist_ok=True)
+
+        # Use file locking to prevent concurrent setup
+        max_retries = 10
+        retry_delay = 0.1
+
+        for attempt in range(max_retries):
+            try:
+                # Try to acquire exclusive lock
+                with open(lock_file, 'w') as lock_f:
+                    fcntl.flock(lock_f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+                    # Double-check after acquiring lock (another process might have completed setup)
+                    if os.path.exists(workspace_ready_file):
+                        if debug:
+                            print(f"[DEBUG] Workspace setup completed by another process for job: {os.path.basename(job_dir)}")
+                        return
+
+                    # Set up workspace (this should be called once per job, not concurrently)
+                    if debug:
+                        print(f"[DEBUG] Setting up workspace for job: {os.path.basename(job_dir)} (attempt {attempt + 1})")
+
+                    try:
+                        self.setup_workspace(job_dir, debug=debug)
+
+                        # Mark workspace as ready
+                        with open(workspace_ready_file, 'w') as ready_f:
+                            ready_f.write(f"Workspace ready for job: {os.path.basename(job_dir)}\n")
+                            ready_f.write(f"Setup completed at: {datetime.now().isoformat()}\n")
+
+                        if debug:
+                            print(f"[DEBUG] Workspace setup completed successfully for job: {os.path.basename(job_dir)}")
+
+                        return
+
+                    except Exception as setup_error:
+                        # Clean up the ready file if setup failed
+                        if os.path.exists(workspace_ready_file):
+                            try:
+                                os.remove(workspace_ready_file)
+                            except OSError:
+                                pass  # Ignore cleanup errors
+                        raise setup_error
+
+            except BlockingIOError:
+                # Lock is held by another process, wait and retry
+                if debug and attempt == 0:
+                    print(f"[DEBUG] Workspace setup lock held by another process, waiting...")
+                time.sleep(retry_delay)
+
+            except Exception as e:
+                if debug:
+                    print(f"[DEBUG] Unexpected error during workspace setup coordination: {e}")
+                raise e
+
+        # If we get here, we failed to acquire the lock after all retries
+        raise Exception(f"Failed to coordinate workspace setup for job {os.path.basename(job_dir)}: lock acquisition timeout")
+
+    def initialize_jobs_dir(self, jobs_dir: str) -> bool:
+        """
+        Initialize the jobs directory with default configurations.
+
+        This is a compatibility method for tests that mimics the CLI init command.
+
+        Args:
+            jobs_dir: Jobs directory to initialize
+
+        Returns:
+            True if initialization successful, False otherwise
+        """
+        try:
+            # Import the resource loading utilities
+            import json
+            try:
+                from importlib import resources as importlib_resources
+            except ImportError:
+                import importlib_resources
+
+            print(f"[DEBUG {datetime.now().strftime('%H:%M:%S.%f')}] Creating jobs directory in initialize_jobs_dir: {jobs_dir}")
+            os.makedirs(jobs_dir, exist_ok=True)
+            print(f"[DEBUG {datetime.now().strftime('%H:%M:%S.%f')}] Jobs directory created in initialize_jobs_dir: {jobs_dir}")
+
+            roles_and_files_to_copy = ["worker.md", "worker.json", "supervisor.md", "supervisor.json", "system.md"]
+            schema_copied_count = 0
+
+            for role_file in roles_and_files_to_copy:
+                # Load the schema from package resources
+                try:
+                    resource_file = importlib_resources.files('logist') / 'schemas' / 'roles' / role_file
+                    with resource_file.open('r', encoding='utf-8') as f:
+                        # Read as text for .md files
+                        role_data = f.read()
+
+                    # Write to jobs directory
+                    dest_path = os.path.join(jobs_dir, role_file)
+                    print(f"[DEBUG {datetime.now().strftime('%H:%M:%S.%f')}] Writing role file in initialize_jobs_dir: {dest_path}")
+                    with open(dest_path, 'w', encoding='utf-8') as f:
+                        f.write(role_data)
+                    print(f"[DEBUG {datetime.now().strftime('%H:%M:%S.%f')}] Role file written in initialize_jobs_dir: {dest_path}")
+
+                    schema_copied_count += 1
+
+                except (FileNotFoundError, IOError) as e:
+                    # Skip missing files silently for compatibility
+                    pass
+                except Exception as e:
+                    # Skip errors silently for compatibility
+                    pass
+
+            # Load default roles configuration from package resources
+            roles_copied_count = 0
+            try:
+                resource_file = importlib_resources.files('logist') / 'schemas' / 'roles' / 'default-roles.json'
+                with resource_file.open('r', encoding='utf-8') as f:
+                    default_roles = json.load(f)
+            except (FileNotFoundError, IOError, json.JSONDecodeError) as e:
+                # This should never happen in a properly installed package
+                return False
+
+            # Generate individual role JSON files and MD files (only for roles not copied from schemas)
+            if default_roles and "roles" in default_roles:
+                for role_name, role_config in default_roles["roles"].items():
+                    role_json_path = os.path.join(jobs_dir, f"{role_name.lower()}.json")
+                    role_md_path = os.path.join(jobs_dir, f"{role_name.lower()}.md")
+                    # Skip if we already copied this file from schemas
+                    if os.path.exists(role_json_path) and os.path.exists(role_md_path):
+                        continue
+                    try:
+                        # Create JSON config file
+                        if not os.path.exists(role_json_path):
+                            print(f"[DEBUG {datetime.now().strftime('%H:%M:%S.%f')}] Writing role JSON file in initialize_jobs_dir: {role_json_path}")
+                            with open(role_json_path, 'w') as f:
+                                json.dump(role_config, f, indent=2)
+                            print(f"[DEBUG {datetime.now().strftime('%H:%M:%S.%f')}] Role JSON file written in initialize_jobs_dir: {role_json_path}")
+                            roles_copied_count += 1
+
+                        # Create MD instructions file
+                        if not os.path.exists(role_md_path) and "instructions" in role_config:
+                            print(f"[DEBUG {datetime.now().strftime('%H:%M:%S.%f')}] Writing role MD file in initialize_jobs_dir: {role_md_path}")
+                            with open(role_md_path, 'w') as f:
+                                f.write(role_config["instructions"])
+                            print(f"[DEBUG {datetime.now().strftime('%H:%M:%S.%f')}] Role MD file written in initialize_jobs_dir: {role_md_path}")
+                    except OSError as e:
+                        # Skip errors silently for compatibility
+                        pass
+
+            # Create jobs index
+            jobs_index_path = os.path.join(jobs_dir, "jobs_index.json")
+            jobs_index_data = {
+                "current_job_id": None,
+                "jobs": {},
+                "queue": []
+            }
+            print(f"[DEBUG {datetime.now().strftime('%H:%M:%S.%f')}] Writing jobs index in initialize_jobs_dir: {jobs_index_path}")
+            with open(jobs_index_path, 'w') as f:
+                json.dump(jobs_index_data, f, indent=2)
+            print(f"[DEBUG {datetime.now().strftime('%H:%M:%S.%f')}] Jobs index written in initialize_jobs_dir: {jobs_index_path}")
+
+            return True
+        except Exception as e:
+            return False
+
+    def activate_job(self, job_id: str, jobs_dir: str) -> bool:
+        """
+        Activate a DRAFT job for execution and add to processing queue.
+
+        Args:
+            job_id: Job identifier
+            jobs_dir: Jobs directory
+
+        Returns:
+            True if activation successful, False otherwise
+        """
+        try:
+            # Get job directory
+            job_status = self.get_job_status(job_id, jobs_dir)
+            job_dir = job_status["directory"]
+
+            # Load job manifest
+            from logist.job_state import load_job_manifest, transition_state, update_job_manifest, JobStates
+            manifest = load_job_manifest(job_dir)
+            current_status = manifest.get("status")
+
+            # Check job state - must be DRAFT to activate
+            if current_status != JobStates.DRAFT:
+                return False
+
+            # Transition job state from DRAFT to PENDING
+            new_status = transition_state(JobStates.DRAFT, "System", "ACTIVATED")
+            if new_status != JobStates.PENDING:
+                return False
+
+            # Ensure phases and current_phase are initialized when activating
+            phases = manifest.get("phases")
+            if not phases:
+                phases = [{"name": "default", "description": "Default single phase"}]
+                manifest["phases"] = phases
+
+            # Set current_phase to first phase if not already set
+            if manifest.get("current_phase") is None:
+                current_phase = phases[0]["name"]
+            else:
+                current_phase = manifest["current_phase"]
+
+            # Update job manifest with status, phases, and current_phase all at once
+            manifest["phases"] = phases
+            manifest["current_phase"] = current_phase
+            manifest["status"] = new_status
+
+            # Save the complete updated manifest
+            manifest_path = os.path.join(job_dir, "job_manifest.json")
+            print(f"[DEBUG {datetime.now().strftime('%H:%M:%S.%f')}] Writing job manifest in activate_job: {manifest_path}")
+            with open(manifest_path, 'w') as f:
+                json.dump(manifest, f, indent=2)
+            print(f"[DEBUG {datetime.now().strftime('%H:%M:%S.%f')}] Job manifest written in activate_job: {manifest_path}")
+
+            # Load/update jobs index to add job to queue
+            jobs_index_path = os.path.join(jobs_dir, "jobs_index.json")
+
+            try:
+                with open(jobs_index_path, 'r') as f:
+                    jobs_index = json.load(f)
+            except (json.JSONDecodeError, OSError):
+                jobs_index = {"current_job_id": None, "jobs": {}}
+
+            # Initialize queue if not present
+            if "queue" not in jobs_index:
+                jobs_index["queue"] = []
+
+            # Remove job from queue if already present (shouldn't be, but safety check)
+            if job_id in jobs_index["queue"]:
+                jobs_index["queue"].remove(job_id)
+
+            # Append to end of queue
+            jobs_index["queue"].append(job_id)
+
+            # Save updated jobs index
+            print(f"[DEBUG {datetime.now().strftime('%H:%M:%S.%f')}] Writing jobs index in activate_job: {jobs_index_path}")
+            with open(jobs_index_path, 'w') as f:
+                json.dump(jobs_index, f, indent=2)
+            print(f"[DEBUG {datetime.now().strftime('%H:%M:%S.%f')}] Jobs index written in activate_job: {jobs_index_path}")
+
+            return True
+
+        except Exception as e:
+            return False

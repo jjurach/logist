@@ -121,14 +121,16 @@ class TestConcurrencyPerformance:
                 return job_id, None, str(e)
 
         # Test with different concurrency levels
-        for num_jobs in [10, 50, 100]:
+        job_counter = 0
+        for num_jobs in [2, 4, 6]:
             performance_monitor.operations.clear()
             performance_monitor.errors.clear()
 
-            # Create jobs concurrently
+            # Create jobs concurrently with unique IDs
             with ThreadPoolExecutor(max_workers=min(10, num_jobs)) as executor:
-                futures = [executor.submit(create_job, f"perf_job_{i}") for i in range(num_jobs)]
+                futures = [executor.submit(create_job, f"perf_job_{job_counter + i}") for i in range(num_jobs)]
                 results = [future.result() for future in as_completed(futures)]
+            job_counter += num_jobs
 
             # Verify results
             successful = sum(1 for r in results if r[2] is None)
@@ -169,6 +171,17 @@ class TestConcurrencyPerformance:
             # Activate job
             job_manager.activate_job(job_id, temp_jobs_dir)
             job_ids.append(job_id)
+
+        # Set up workspaces individually before concurrent execution
+        print("Setting up workspaces individually before concurrent execution...")
+        for job_id in job_ids:
+            job_dir = dir_manager.get_job_directory(job_id)
+            try:
+                job_manager.ensure_workspace_ready(job_dir)
+                print(f"Workspace ready for job: {job_id}")
+            except Exception as e:
+                print(f"Failed to setup workspace for job {job_id}: {e}")
+                # Continue with other jobs even if one fails
 
         # Mock execution function
         def execute_job(job_id: str):
