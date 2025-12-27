@@ -12,7 +12,7 @@ import threading
 from unittest.mock import patch, MagicMock
 
 from src.logist.agents.mock import MockAgent
-from src.logist.runtimes.host import HostRuntime
+from src.logist.runtimes.mock import MockRuntime
 
 
 class TestAgentRuntimeIntegration:

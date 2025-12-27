@@ -12,7 +12,7 @@ import shutil
 from pathlib import Path
 
 from src.logist.agents.mock import MockAgent
-from src.logist.runtimes.host import HostRuntime
+from src.logist.runtimes.mock import MockRuntime
 
 # Import new mock agent framework
 from tests.test_utils.mock_agent_utils import (
@@ -26,15 +26,14 @@ from tests.test_utils.mock_agent_utils import (
 @pytest.fixture
 def mock_runtime():
     """
-    Fixture providing a HostRuntime instance for testing.
+    Fixture providing a MockRuntime instance for testing.
 
     Returns:
-        HostRuntime: Configured runtime for testing agent execution
+        MockRuntime: Configured mock runtime for testing agent execution
     """
-    runtime = HostRuntime()
+    runtime = MockRuntime()
     yield runtime
-    # Cleanup any remaining processes
-    # Note: In a real implementation, we'd want to track and clean up all processes
+    # Mock runtime handles its own cleanup
 
 
 @pytest.fixture
