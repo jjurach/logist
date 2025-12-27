@@ -40,9 +40,17 @@ except ImportError:
 class LogistEngine:
     """Orchestration engine for Logist jobs."""
 
-    def __init__(self):
-        """Initialize the LogistEngine with optional observer and sentinel integration."""
+    def __init__(self, runner=None, agent=None):
+        """
+        Initialize the LogistEngine with runner and agent dependencies.
+
+        Args:
+            runner: Runtime instance for job execution
+            agent: Agent instance for command generation (optional, for future use)
+        """
         self._job_workspace_setup_cache = {}  # Cache to track workspace setup per job
+        self.runner = runner
+        self.agent = agent
 
         self.observer = None
         if OBSERVER_AVAILABLE:
@@ -262,7 +270,10 @@ class LogistEngine:
 
             # 4. Prepare workspace with attachments and file discovery
             workspace_dir = os.path.join(job_dir, "workspace")
-            prep_result = workspace_utils.prepare_workspace_attachments(job_dir, workspace_dir)
+            if self.runner:
+                prep_result = self.runner.provision(job_dir, workspace_dir)
+            else:
+                prep_result = workspace_utils.prepare_workspace_attachments(job_dir, workspace_dir)
             if prep_result["success"]:
                 if prep_result["attachments_copied"]:
                     print(f"   📎 Copied {len(prep_result['attachments_copied'])} attachments to workspace")
@@ -296,12 +307,21 @@ class LogistEngine:
             # 9. Execute LLM with Cline using discovered file arguments
             file_arguments = prep_result["file_arguments"] + outcome_prep["attachments_added"] if prep_result["success"] else []
 
-            processed_response, execution_time = execute_llm_with_cline(
-                context=context,
-                workspace_dir=workspace_dir,
-                file_arguments=file_arguments,
-                dry_run=dry_run
-            )
+            # Use runner's execute_job_step method if available (for DirectCommandRuntime)
+            if self.runner and hasattr(self.runner, 'execute_job_step'):
+                processed_response, execution_time = self.runner.execute_job_step(
+                    context=context,
+                    workspace_dir=workspace_dir,
+                    file_arguments=file_arguments,
+                    dry_run=dry_run
+                )
+            else:
+                processed_response, execution_time = execute_llm_with_cline(
+                    context=context,
+                    workspace_dir=workspace_dir,
+                    file_arguments=file_arguments,
+                    dry_run=dry_run
+                )
 
             response_action = processed_response.get("action")
 
@@ -401,22 +421,28 @@ class LogistEngine:
             # 13. Perform git commit for evidence files and changes
             try:
                 commit_summary = processed_response.get("summary_for_supervisor", f"{active_role} step: {current_phase_name}")
-                commit_result = workspace_utils.perform_git_commit(
-                    job_dir=job_dir,
-                    evidence_files=evidence_files,
-                    summary=commit_summary
-                )
+                if self.runner:
+                    commit_result = self.runner.harvest(job_dir, workspace_dir, evidence_files, commit_summary)
+                else:
+                    commit_result = workspace_utils.perform_git_commit(
+                        job_dir=job_dir,
+                        evidence_files=evidence_files,
+                        summary=commit_summary
+                    )
 
                 if commit_result["success"]:
-                    print(f"   💾 Changes committed: {commit_result['commit_hash'][:8]}")
-                    print(f"   📁 Files committed: {len(commit_result['files_committed'])}")
+                    if commit_result.get("commit_hash"):
+                        print(f"   💾 Changes committed: {commit_result['commit_hash'][:8]}")
+                        print(f"   📁 Files committed: {len(commit_result.get('files_committed', []))}")
+                    else:
+                        print("   💾 Changes harvested successfully")
                 else:
-                    print(f"   ⚠️  Git commit failed: {commit_result['error']}")
-                    # Don't fail the step for git commit issues - continue execution
+                    print(f"   ⚠️  Harvest/commit failed: {commit_result['error']}")
+                    # Don't fail the step for harvest/commit issues - continue execution
 
             except Exception as e:
-                print(f"   ⚠️  Git commit error: {e}")
-                # Continue - git commit failures shouldn't fail the job step
+                print(f"   ⚠️  Harvest/commit error: {e}")
+                # Continue - harvest/commit failures shouldn't fail the job step
 
             return True
 

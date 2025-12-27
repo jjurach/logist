@@ -129,6 +129,40 @@ class Runtime(ABC):
         """
         pass
 
+    def provision(self, job_dir: str, workspace_dir: str) -> Dict[str, Any]:
+        """
+        Provision workspace for job execution.
+
+        This includes setting up git repositories, copying attachments,
+        and preparing the workspace environment.
+
+        Args:
+            job_dir: Job directory path
+            workspace_dir: Workspace directory path
+
+        Returns:
+            Dict with provisioning results
+        """
+        raise NotImplementedError("provision() must be implemented by subclasses")
+
+    def harvest(self, job_dir: str, workspace_dir: str, evidence_files: List[str], summary: str) -> Dict[str, Any]:
+        """
+        Harvest results from completed job execution.
+
+        This includes committing changes, collecting artifacts,
+        and preparing results for the next phase.
+
+        Args:
+            job_dir: Job directory path
+            workspace_dir: Workspace directory path
+            evidence_files: List of evidence files to commit
+            summary: Summary of the execution for commit message
+
+        Returns:
+            Dict with harvest results
+        """
+        raise NotImplementedError("harvest() must be implemented by subclasses")
+
     def cleanup(self, process_id: str) -> None:
         """
         Clean up any resources associated with a process.

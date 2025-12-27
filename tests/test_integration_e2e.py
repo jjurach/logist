@@ -44,7 +44,7 @@ class TestLogistEndToEnd:
     @pytest.fixture
     def engine(self):
         """Create a LogistEngine for testing."""
-        return LogistEngine()
+        return LogistEngine(runner=MockRuntime())
 
     @pytest.fixture
     def mock_agent(self):
@@ -315,7 +315,7 @@ class TestLogistEndToEnd:
         job_manager = JobManagerService()
         job_manager.initialize_jobs_dir(temp_jobs_dir)
 
-        engine = LogistEngine()
+        engine = LogistEngine(runner=MockRuntime())
         engine.initialize_sentinel(temp_jobs_dir)
 
         dir_manager = JobDirectoryManager(temp_jobs_dir)
@@ -372,7 +372,7 @@ class TestLogistEndToEnd:
         job_manager = JobManagerService()
         job_manager.initialize_jobs_dir(temp_jobs_dir)
 
-        engine = LogistEngine()
+        engine = LogistEngine(runner=MockRuntime())
         recovery_manager = JobRecoveryManager(temp_jobs_dir)
 
         # Create job

@@ -24,6 +24,7 @@ from logist.job_processor import (
 from logist.job_context import assemble_job_context, JobContextError  # Now exists
 from logist.recovery import validate_state_persistence, get_recovery_status, RecoveryError
 from logist.metrics_utils import check_thresholds_before_execution, calculate_detailed_metrics, generate_cost_projections, export_metrics_to_csv, ThresholdExceededError
+from logist.runtimes.direct import DirectCommandRuntime
 
 # Create aliases for backward compatibility with tests
 JobManager = JobManagerService
@@ -35,7 +36,7 @@ RoleManager = RoleManagerService
 
 
 # Global instances for CLI
-engine = LogistEngine()
+engine = LogistEngine(runner=DirectCommandRuntime())
 manager = JobManagerService()
 role_manager = RoleManagerService()
 

@@ -366,6 +366,50 @@ class MockRuntime(Runtime):
         """Get the runtime name."""
         return "Mock Runtime"
 
+    def provision(self, job_dir: str, workspace_dir: str) -> Dict[str, Any]:
+        """
+        Provision workspace for mock job execution.
+
+        For mock runtime, this is a no-op that always succeeds.
+
+        Args:
+            job_dir: Job directory path
+            workspace_dir: Workspace directory path
+
+        Returns:
+            Dict with provisioning results
+        """
+        return {
+            "success": True,
+            "attachments_copied": [],
+            "discovered_files": [],
+            "file_arguments": [],
+            "error": None
+        }
+
+    def harvest(self, job_dir: str, workspace_dir: str, evidence_files: List[str], summary: str) -> Dict[str, Any]:
+        """
+        Harvest results from mock job execution.
+
+        For mock runtime, this is a no-op that always succeeds.
+
+        Args:
+            job_dir: Job directory path
+            workspace_dir: Workspace directory path
+            evidence_files: List of evidence files to commit
+            summary: Summary of the execution for commit message
+
+        Returns:
+            Dict with harvest results
+        """
+        return {
+            "success": True,
+            "commit_hash": f"mock_{int(time.time())}_{random.randint(1000, 9999)}",
+            "timestamp": time.time(),
+            "files_committed": evidence_files,
+            "error": None
+        }
+
     @property
     def version(self) -> str:
         """Get the runtime version."""
