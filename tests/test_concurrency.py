@@ -147,6 +147,7 @@ class TestConcurrencyPerformance:
             assert summary["success_rate"] == 1.0, "All job creations should succeed"
             assert summary["operations_per_second"] > 10, "Should create at least 10 jobs per second"
 
+    @pytest.mark.skip(reason="Disabled to prevent creation of git branches in main repository")
     def test_concurrent_job_execution(self, temp_jobs_dir, performance_monitor):
         """Test concurrent execution of multiple jobs."""
         job_manager = JobManagerService()
