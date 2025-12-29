@@ -12,7 +12,7 @@ import shutil
 from pathlib import Path
 
 from src.logist.agents.mock import MockAgent
-from src.logist.runtimes.mock import MockRuntime
+from src.logist.runners.mock import MockRunner
 
 # Import new mock agent framework
 from tests.test_utils.mock_agent_utils import (
@@ -24,16 +24,16 @@ from tests.test_utils.mock_agent_utils import (
 
 
 @pytest.fixture
-def mock_runtime():
+def mock_runner():
     """
-    Fixture providing a MockRuntime instance for testing.
+    Fixture providing a MockRunner instance for testing.
 
     Returns:
-        MockRuntime: Configured mock runtime for testing agent execution
+        MockRunner: Configured mock runner for testing agent execution
     """
-    runtime = MockRuntime()
-    yield runtime
-    # Mock runtime handles its own cleanup
+    runner = MockRunner()
+    yield runner
+    # Mock runner handles its own cleanup
 
 
 @pytest.fixture

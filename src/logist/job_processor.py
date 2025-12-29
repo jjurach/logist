@@ -356,7 +356,8 @@ def process_simulated_response(
     import click
     from datetime import datetime
     from logist.job_state import load_job_manifest, transition_state, update_job_manifest
-    from logist.workspace_utils import perform_git_commit
+    # Note: Git commit for simulated responses is a placeholder
+    # In production, workspace operations go through the runner interface
     from logist.job_history import record_interaction
 
     results = {
@@ -434,17 +435,11 @@ def process_simulated_response(
         )
         click.secho(f"   🔄 Job status updated to: {new_status}", fg="blue")
 
-        # Perform Git commit if there are evidence files
+        # Placeholder for Git commit of evidence files
+        # In production, this would go through the runner's harvest() method
         if evidence_files:
-            commit_result = perform_git_commit(
-                job_dir=job_dir,
-                evidence_files=evidence_files,
-                summary=f"feat: simulated job step - {summary_for_supervisor}"
-            )
-            if commit_result["success"]:
-                click.secho(f"   📝 Committed {len(commit_result.get('files_committed', []))} files", fg="green")
-            else:
-                click.secho(f"⚠️  Git commit failed: {commit_result.get('error', 'Unknown error')}", fg="yellow")
+            click.secho(f"   📝 [PLACEHOLDER] Would commit {len(evidence_files)} evidence files", fg="cyan")
+            click.secho(f"   📁 Evidence: {', '.join(evidence_files[:3])}{'...' if len(evidence_files) > 3 else ''}", fg="cyan")
         else:
             click.echo("   📁 No evidence files to commit.")
 

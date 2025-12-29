@@ -58,7 +58,7 @@ class Agent(ABC):
             is in an interactive state requiring user intervention.
 
         Note:
-            These sequences are used by the Runtime to detect when
+            These sequences are used by the Runner to detect when
             the agent process is blocked waiting for input.
         """
         pass

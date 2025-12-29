@@ -1,28 +1,28 @@
 """
-Direct Command Runtime Implementation for Logist
+Direct Command Runner Implementation for Logist
 
-This module provides a DirectCommandRuntime that handles direct Cline execution
+This module provides a DirectRunner that handles direct Cline execution
 without going through the agent system, used for LLM-based job execution.
 """
 
 import os
 from typing import List, Dict, Optional, Tuple, Any
 
-from .base import Runtime
+from .base import Runner
 from logist.job_processor import execute_llm_with_cline
 
 
-class DirectCommandRuntime(Runtime):
+class DirectRunner(Runner):
     """
-    Runtime for direct Cline command execution.
+    Runner for direct Cline command execution.
 
-    This runtime handles LLM-based job execution by directly calling
+    This runner handles LLM-based job execution by directly calling
     execute_llm_with_cline, bypassing the agent command generation system.
     """
 
     def __init__(self, working_dir: Optional[str] = None):
         """
-        Initialize the DirectCommandRuntime.
+        Initialize the DirectRunner.
 
         Args:
             working_dir: Optional working directory for execution
@@ -33,11 +33,11 @@ class DirectCommandRuntime(Runtime):
         """
         Execute LLM with Cline directly.
 
-        This runtime doesn't spawn traditional processes but executes
+        This runner doesn't spawn traditional processes but executes
         LLM calls directly via execute_llm_with_cline.
 
         Args:
-            cmd: Not used for this runtime (LLM execution is configured via context)
+            cmd: Not used for this runner (LLM execution is configured via context)
             env: Environment variables (may include LLM configuration)
             labels: Optional metadata labels
 
@@ -47,7 +47,7 @@ class DirectCommandRuntime(Runtime):
         Raises:
             RuntimeError: If execution setup fails
         """
-        # For direct command runtime, we don't spawn actual processes
+        # For direct command runner, we don't spawn actual processes
         # Instead, we prepare for LLM execution
         # The actual execution happens in execute_job_step()
         import time
@@ -58,7 +58,7 @@ class DirectCommandRuntime(Runtime):
         """
         Check if execution is still running.
 
-        For direct command runtime, executions are synchronous,
+        For direct command runner, executions are synchronous,
         so they complete immediately.
 
         Args:
@@ -73,7 +73,7 @@ class DirectCommandRuntime(Runtime):
         """
         Get logs from execution.
 
-        For direct command runtime, logs are returned from execute_job_step.
+        For direct command runner, logs are returned from execute_job_step.
 
         Args:
             process_id: The execution identifier
@@ -91,7 +91,7 @@ class DirectCommandRuntime(Runtime):
         """
         Terminate execution.
 
-        For direct command runtime, since executions are synchronous,
+        For direct command runner, since executions are synchronous,
         termination is not applicable.
 
         Args:
@@ -107,7 +107,7 @@ class DirectCommandRuntime(Runtime):
         """
         Wait for execution to complete.
 
-        For direct command runtime, executions complete synchronously
+        For direct command runner, executions complete synchronously
         in execute_job_step, so this returns empty results.
 
         Args:
@@ -118,7 +118,7 @@ class DirectCommandRuntime(Runtime):
             Tuple of (0, empty_string) since execution already completed
 
         Raises:
-            TimeoutError: Never raised for this runtime
+            TimeoutError: Never raised for this runner
         """
         return 0, ""
 
@@ -126,7 +126,7 @@ class DirectCommandRuntime(Runtime):
         """
         Clean up resources associated with execution.
 
-        For direct command runtime, no cleanup is needed since
+        For direct command runner, no cleanup is needed since
         executions are synchronous.
 
         Args:
@@ -139,7 +139,7 @@ class DirectCommandRuntime(Runtime):
         """
         Execute a job step using LLM with Cline.
 
-        This method provides the core execution logic for direct command runtime.
+        This method provides the core execution logic for direct command runner.
 
         Args:
             context: Job context dictionary
@@ -161,8 +161,8 @@ class DirectCommandRuntime(Runtime):
         """
         Provision workspace for direct command execution.
 
-        For direct command runtime, provisioning is minimal since
-        the runtime doesn't manage git repositories.
+        For direct command runner, provisioning is minimal since
+        the runner doesn't manage git repositories.
 
         Args:
             job_dir: Job directory path
@@ -171,7 +171,7 @@ class DirectCommandRuntime(Runtime):
         Returns:
             Dict with provisioning results
         """
-        # Direct command runtime doesn't need complex provisioning
+        # Direct command runner doesn't need complex provisioning
         # since it works with existing workspace structure
         return {
             "success": True,
@@ -185,7 +185,7 @@ class DirectCommandRuntime(Runtime):
         """
         Harvest results from direct command execution.
 
-        For direct command runtime, harvesting is minimal since
+        For direct command runner, harvesting is minimal since
         results are handled by the caller.
 
         Args:
@@ -197,7 +197,7 @@ class DirectCommandRuntime(Runtime):
         Returns:
             Dict with harvest results
         """
-        # Direct command runtime doesn't perform git operations
+        # Direct command runner doesn't perform git operations
         # Results harvesting is handled by the caller
         return {
             "success": True,
@@ -209,10 +209,10 @@ class DirectCommandRuntime(Runtime):
 
     @property
     def name(self) -> str:
-        """Get the runtime name."""
-        return "Direct Command Runtime"
+        """Get the runner name."""
+        return "Direct Command Runner"
 
     @property
     def version(self) -> str:
-        """Get the runtime version."""
+        """Get the runner version."""
         return "1.0.0"

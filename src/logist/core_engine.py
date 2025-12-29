@@ -45,7 +45,7 @@ class LogistEngine:
         Initialize the LogistEngine with runner and agent dependencies.
 
         Args:
-            runner: Runtime instance for job execution
+            runner: Runner instance for job execution
             agent: Agent instance for command generation (optional, for future use)
         """
         self._job_workspace_setup_cache = {}  # Cache to track workspace setup per job
@@ -307,7 +307,7 @@ class LogistEngine:
             # 9. Execute LLM with Cline using discovered file arguments
             file_arguments = prep_result["file_arguments"] + outcome_prep["attachments_added"] if prep_result["success"] else []
 
-            # Use runner's execute_job_step method if available (for DirectCommandRuntime)
+            # Use runner's execute_job_step method if available (for DirectRunner)
             if self.runner and hasattr(self.runner, 'execute_job_step'):
                 processed_response, execution_time = self.runner.execute_job_step(
                     context=context,

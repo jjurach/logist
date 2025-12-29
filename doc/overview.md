@@ -8,7 +8,7 @@
 
 **Logist** is a sophisticated agent orchestration tool that brings maritime-inspired discipline to AI agent workflows. Just as a ship's logist manages resources and coordinates complex operations, Logist provides structured supervision and resource management for persistent, multi-step AI agent jobs.
 
-At its core, Logist transforms chaotic AI agent interactions into safe, predictable, and human-supervised processes. It uses [**Cline CLI**](https://github.com/cline/cline) as the fundamental execution primitive to run specialized AI agents through carefully orchestrated workflows.
+At its core, Logist transforms chaotic AI agent interactions into safe, predictable, and human-supervised processes. It uses a pluggable **Agent Provider** architecture to execute AI coding agents (such as Cline, Aider, Claude Code, and others) through carefully orchestrated workflows, combined with **Runners** that manage execution environments (Podman, Docker, Kubernetes, or direct host execution).
 
 ## 🌟 Key Value Proposition
 
@@ -163,7 +163,8 @@ Logist follows a systematic, phase-based development approach:
 ### Core Technologies
 - **Language**: Python 3.8+ with modern packaging
 - **CLI Framework**: Click for command-line interface
-- **Agent Execution**: Cline CLI integration
+- **Agent Execution**: Pluggable agent providers (Cline, Aider, Claude Code, etc.)
+- **Runner Environments**: Pluggable runners (Podman, Docker, Kubernetes, direct)
 - **State Management**: JSON-based job manifests and history tracking
 - **Schema Validation**: JSON Schema for structured communication
 - **Git Safety**: Branch isolation and commit management
@@ -172,12 +173,16 @@ Logist follows a systematic, phase-based development approach:
 
 ### 1. Prerequisites
 ```bash
-# Install Cline CLI (Logist's execution primitive)
+# Install an AI coding agent CLI (e.g., Cline, Aider, or Claude Code)
+# Example with Cline:
 npm install -g @cline/cli
-
-# Configure API access
 cline config set openai.key sk-your-key-here
-cline config set openai.model grok-code-fast-1
+
+# Example with Aider:
+pip install aider-chat
+
+# Example with Claude Code:
+# See https://claude.ai/claude-code for installation
 ```
 
 ### 2. Install Logist

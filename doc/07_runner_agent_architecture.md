@@ -230,3 +230,173 @@ logist job create --runner docker --agent claude-code --prompt "Do this"
 ```
 
 These overrides are stored in the job manifest and persist across job operations.
+
+## Runner Lifecycle Operations
+
+The Runner interface defines a complete lifecycle for job execution. Each phase maps to specific runner methods:
+
+### Lifecycle Phases
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Runner Lifecycle                              │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  1. PROVISION                    2. SPAWN                        │
+│  ┌──────────────────┐           ┌──────────────────┐            │
+│  │ provision()      │──────────▶│ spawn()          │            │
+│  │ - Clone repo     │           │ - Start process  │            │
+│  │ - Setup branch   │           │ - Return PID     │            │
+│  │ - Copy files     │           │ - Configure env  │            │
+│  └──────────────────┘           └────────┬─────────┘            │
+│                                          │                       │
+│                                          ▼                       │
+│                                 3. MONITOR                       │
+│                                 ┌──────────────────┐            │
+│                                 │ is_alive()       │            │
+│                                 │ get_logs()       │◀─────┐     │
+│                                 │ wait()           │      │     │
+│                                 └────────┬─────────┘      │     │
+│                                          │         Loop   │     │
+│                                          └────────────────┘     │
+│                                          │                       │
+│                                          ▼                       │
+│  4. HARVEST                     5. CLEANUP                       │
+│  ┌──────────────────┐           ┌──────────────────┐            │
+│  │ harvest()        │──────────▶│ terminate()      │            │
+│  │ - Commit changes │           │ cleanup()        │            │
+│  │ - Collect files  │           │ - Kill process   │            │
+│  │ - Record results │           │ - Free resources │            │
+│  └──────────────────┘           └──────────────────┘            │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 1. Provision Phase
+
+The `provision()` method prepares the workspace for job execution:
+
+```python
+def provision(self, job_dir: str, workspace_dir: str) -> Dict[str, Any]:
+    """
+    Provision workspace for job execution.
+
+    Responsibilities:
+    - Clone git repository to isolated workspace
+    - Create job-specific branch
+    - Copy attachments and context files
+    - Setup environment for agent execution
+
+    Returns:
+        {
+            "success": True/False,
+            "attachments_copied": ["file1.md", "file2.py"],
+            "discovered_files": ["src/main.py"],
+            "file_arguments": ["--file", "file1.md"],
+            "error": None or "error message"
+        }
+    """
+```
+
+### 2. Spawn Phase
+
+The `spawn()` method starts the agent process:
+
+```python
+def spawn(self, cmd: List[str], env: Dict[str, str],
+          labels: Optional[Dict[str, str]] = None) -> str:
+    """
+    Start a new process/container with the given command.
+
+    Responsibilities:
+    - Execute agent command in isolated environment
+    - Configure environment variables
+    - Apply resource limits (CPU, memory, timeout)
+    - Return unique process identifier
+
+    Returns:
+        Unique process_id string for tracking
+    """
+```
+
+### 3. Monitor Phase
+
+Multiple methods support process monitoring:
+
+```python
+def is_alive(self, process_id: str) -> bool:
+    """Check if process is still running."""
+
+def get_logs(self, process_id: str, tail: Optional[int] = None) -> str:
+    """Get current stdout/stderr from process."""
+
+def wait(self, process_id: str, timeout: Optional[float] = None) -> Tuple[int, str]:
+    """Wait for process completion, return (exit_code, logs)."""
+```
+
+### 4. Harvest Phase
+
+The `harvest()` method collects results after execution:
+
+```python
+def harvest(self, job_dir: str, workspace_dir: str,
+            evidence_files: List[str], summary: str) -> Dict[str, Any]:
+    """
+    Harvest results from completed job execution.
+
+    Responsibilities:
+    - Commit changes to job branch
+    - Collect evidence files and artifacts
+    - Record execution metrics
+    - Prepare results for next phase
+
+    Returns:
+        {
+            "success": True/False,
+            "commit_hash": "abc123...",
+            "timestamp": 1234567890.0,
+            "files_committed": ["file1.py", "file2.py"],
+            "error": None or "error message"
+        }
+    """
+```
+
+### 5. Cleanup Phase
+
+Cleanup methods handle resource deallocation:
+
+```python
+def terminate(self, process_id: str, force: bool = False) -> bool:
+    """Terminate running process (SIGTERM or SIGKILL)."""
+
+def cleanup(self, process_id: str) -> None:
+    """Free resources associated with process."""
+```
+
+## Mapping CLI Commands to Runner Operations
+
+| CLI Command | Runner Methods Called |
+|-------------|----------------------|
+| `logist job create` | (No runner interaction) |
+| `logist job activate` | (No runner interaction) |
+| `logist job step` | `provision()` → `spawn()` → `wait()` → `harvest()` → `cleanup()` |
+| `logist job run` | Multiple `step` cycles |
+| `logist job status` | `is_alive()`, `get_logs()` |
+| `logist workspace cleanup` | `cleanup()` |
+
+## Error Handling
+
+Each lifecycle phase should handle errors gracefully:
+
+```python
+try:
+    process_id = runner.spawn(cmd, env)
+    exit_code, logs = runner.wait(process_id, timeout=3600)
+except TimeoutError:
+    runner.terminate(process_id, force=True)
+    # Handle timeout...
+except RuntimeError as e:
+    # Handle spawn failure...
+finally:
+    runner.cleanup(process_id)
+```

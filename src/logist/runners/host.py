@@ -1,7 +1,7 @@
 """
-Host Runtime Implementation for Logist
+Host Runner Implementation for Logist
 
-This module provides a Runtime implementation that executes processes
+This module provides a Runner implementation that executes processes
 directly on the host system using Python's subprocess module.
 """
 
@@ -13,21 +13,21 @@ import time
 from typing import List, Dict, Optional, Tuple, Any
 from pathlib import Path
 
-from .base import Runtime
+from .base import Runner
 from logist import workspace_utils
 
 
-class HostRuntime(Runtime):
+class HostRunner(Runner):
     """
-    Runtime implementation that executes processes on the host system.
+    Runner implementation that executes processes on the host system.
 
-    This runtime uses subprocess.Popen to spawn and manage processes,
+    This runner uses subprocess.Popen to spawn and manage processes,
     providing direct execution without containerization.
     """
 
     def __init__(self, working_dir: Optional[str] = None):
         """
-        Initialize the HostRuntime.
+        Initialize the HostRunner.
 
         Args:
             working_dir: Optional working directory for process execution.
@@ -46,7 +46,7 @@ class HostRuntime(Runtime):
         Args:
             cmd: List of command arguments to execute
             env: Environment variables to set for the process
-            labels: Optional metadata labels (ignored for host runtime)
+            labels: Optional metadata labels (ignored for host runner)
 
         Returns:
             Unique process identifier
@@ -259,8 +259,8 @@ class HostRuntime(Runtime):
 
     @property
     def name(self) -> str:
-        """Get the runtime name."""
-        return "Host Runtime"
+        """Get the runner name."""
+        return "Host Runner"
 
     def provision(self, job_dir: str, workspace_dir: str) -> Dict[str, Any]:
         """
@@ -292,5 +292,5 @@ class HostRuntime(Runtime):
 
     @property
     def version(self) -> str:
-        """Get the runtime version."""
+        """Get the runner version."""
         return "1.0.0"

@@ -29,8 +29,21 @@ class JobManagerService:
         except (json.JSONDecodeError, OSError):
             return None
 
-    def create_job(self, job_dir: str, jobs_dir: str) -> str:
-        """Create or register a new job with manifest and directory structure."""
+    def create_job(self, job_dir: str, jobs_dir: str, prompt: str = None,
+                   git_source_repo: str = None, runner: str = None, agent: str = None) -> str:
+        """Create or register a new job with manifest and directory structure.
+
+        Args:
+            job_dir: Job directory path (relative or absolute)
+            jobs_dir: Base jobs directory
+            prompt: Task prompt for the job (required for activation)
+            git_source_repo: Git source repository path
+            runner: Runner to use (podman, docker, kubernetes, direct)
+            agent: Agent provider to use (cline-cli, aider-chat, claude-code, etc.)
+
+        Returns:
+            Job ID of the created/updated job
+        """
         jobs_dir_abs = os.path.abspath(jobs_dir)
 
         # Handle job directory path resolution
@@ -93,6 +106,23 @@ class JobManagerService:
             },
             "history": []
         }
+
+        # Add required job attributes (prompt and gitSourceRepo)
+        if prompt:
+            job_manifest["prompt"] = prompt
+            # Also write prompt to prompt.md file
+            prompt_file_path = os.path.join(job_dir_abs, "prompt.md")
+            with open(prompt_file_path, 'w') as f:
+                f.write(prompt)
+
+        if git_source_repo:
+            job_manifest["gitSourceRepo"] = git_source_repo
+
+        # Add optional runner and agent configuration
+        if runner:
+            job_manifest["runner"] = runner
+        if agent:
+            job_manifest["agent"] = agent
 
         # Add job_spec content if present
         if job_spec:
@@ -316,19 +346,38 @@ class JobManagerService:
         engine = LogistEngine()
         return engine.step_job(ctx, job_id, job_dir, dry_run=dry_run)
 
-    def setup_workspace(self, job_dir: str, debug: bool = False) -> None:
-        """Setup isolated workspace with branch management for advanced isolation."""
+    def setup_workspace(self, job_dir: str, debug: bool = False, runner=None) -> None:
+        """Setup isolated workspace with branch management for advanced isolation.
+
+        This method delegates workspace setup to the runner's provision() method
+        when a runner is available. Without a runner, it uses workspace_utils
+        as a fallback for backward compatibility.
+
+        Args:
+            job_dir: Job directory path
+            debug: Enable debug output
+            runner: Optional runner instance for workspace provisioning
+        """
         # Extract job_id from directory path
         job_id = os.path.basename(os.path.abspath(job_dir))
+        workspace_dir = os.path.join(job_dir, "workspace")
 
         try:
-            # Use advanced isolated workspace setup (clones HEAD, no branch creation)
-            result = workspace_utils.setup_isolated_workspace(job_id, job_dir, base_branch="main", debug=debug)
-            if not result["success"]:
-                raise Exception(f"Failed to setup isolated workspace: {result['error']}")
+            if runner:
+                # Use runner's provision method for workspace setup
+                result = runner.provision(job_dir, workspace_dir)
+                if not result.get("success", False):
+                    raise Exception(f"Runner provisioning failed: {result.get('error', 'Unknown error')}")
+                if debug:
+                    print(f"[DEBUG] Workspace provisioned via runner for job: {job_id}")
+            else:
+                # Fallback to workspace_utils for backward compatibility
+                result = workspace_utils.setup_isolated_workspace(job_id, job_dir, base_branch="main", debug=debug)
+                if not result["success"]:
+                    raise Exception(f"Failed to setup isolated workspace: {result['error']}")
 
         except Exception as e:
-            raise Exception(f"Advanced workspace setup failed: {e}")
+            raise Exception(f"Workspace setup failed: {e}")
 
     def ensure_workspace_ready(self, job_dir: str, debug: bool = False) -> None:
         """
@@ -539,6 +588,24 @@ class JobManagerService:
             # Check job state - must be DRAFT to activate
             if current_status != JobStates.DRAFT:
                 return False
+
+            # Validate required attributes before activation
+            prompt = manifest.get("prompt")
+            if not prompt:
+                # Also check for prompt.md file
+                prompt_file_path = os.path.join(job_dir, "prompt.md")
+                if os.path.exists(prompt_file_path):
+                    with open(prompt_file_path, 'r') as f:
+                        prompt = f.read().strip()
+                    if prompt:
+                        manifest["prompt"] = prompt
+
+            if not prompt:
+                raise Exception("Job activation failed: 'prompt' attribute is required. Use 'logist job config --prompt' to set it.")
+
+            git_source_repo = manifest.get("gitSourceRepo")
+            if not git_source_repo:
+                raise Exception("Job activation failed: 'gitSourceRepo' attribute is required. Use 'logist job create --git-source-repo' or run from a git repository.")
 
             # Transition job state from DRAFT to PENDING
             new_status = transition_state(JobStates.DRAFT, "System", "ACTIVATED")

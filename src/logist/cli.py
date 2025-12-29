@@ -24,7 +24,7 @@ from logist.job_processor import (
 from logist.job_context import assemble_job_context, JobContextError  # Now exists
 from logist.recovery import validate_state_persistence, get_recovery_status, RecoveryError
 from logist.metrics_utils import check_thresholds_before_execution, calculate_detailed_metrics, generate_cost_projections, export_metrics_to_csv, ThresholdExceededError
-from logist.runtimes.direct import DirectCommandRuntime
+from logist.runners.direct import DirectRunner
 
 # Create aliases for backward compatibility with tests
 JobManager = JobManagerService
@@ -36,7 +36,7 @@ RoleManager = RoleManagerService
 
 
 # Global instances for CLI
-engine = LogistEngine(runner=DirectCommandRuntime())
+engine = LogistEngine(runner=DirectRunner())
 manager = JobManagerService()
 role_manager = RoleManagerService()
 
@@ -205,13 +205,55 @@ def role():
 
 @job.command(name="create")
 @click.argument("directory", type=click.Path(), default=".")
+@click.option("--prompt", "-p", help="Task prompt for the job (required for activation)")
+@click.option("--file", "-f", "prompt_file", type=click.Path(exists=True), help="Read prompt from file")
+@click.option("--git-source-repo", help="Git source repository path (auto-detected if not specified)")
+@click.option("--runner", help="Runner to use (podman, docker, kubernetes, direct)")
+@click.option("--agent", help="Agent provider to use (cline-cli, aider-chat, claude-code, etc.)")
 @click.pass_context
-def create_job(ctx, directory: str):
-    """Initialize a directory as a job or update it."""
+def create_job(ctx, directory: str, prompt: str, prompt_file: str, git_source_repo: str, runner: str, agent: str):
+    """Initialize a directory as a job or update it.
+
+    Jobs require a prompt (--prompt or --file) before activation.
+    Git source repository is auto-detected from current directory if not specified.
+    """
     jobs_dir = ctx.obj["JOBS_DIR"]
     click.echo(f"✨ Executing 'logist job create' on directory '{directory}'")
-    job_id = manager.create_job(directory, jobs_dir)
+
+    # Handle prompt from file
+    final_prompt = prompt
+    if prompt_file:
+        if prompt:
+            raise click.ClickException("Cannot specify both --prompt and --file")
+        with open(prompt_file, 'r') as f:
+            final_prompt = f.read()
+
+    # Auto-detect git source repo if not provided
+    final_git_source_repo = git_source_repo
+    if not final_git_source_repo:
+        final_git_source_repo = _detect_git_source_repo()
+
+    job_id = manager.create_job(
+        directory, jobs_dir,
+        prompt=final_prompt,
+        git_source_repo=final_git_source_repo,
+        runner=runner,
+        agent=agent
+    )
     click.echo(f"🎯 Job '{job_id}' created/updated and selected.")
+    if not final_prompt:
+        click.echo("💡 Note: Job has no prompt. Use 'logist job config --prompt' before activation.")
+
+
+def _detect_git_source_repo() -> str | None:
+    """Auto-detect git source repository by walking up directory tree."""
+    current_dir = os.getcwd()
+    while current_dir != os.path.dirname(current_dir):  # Stop at root
+        git_dir = os.path.join(current_dir, ".git")
+        if os.path.exists(git_dir):
+            return current_dir
+        current_dir = os.path.dirname(current_dir)
+    return None
 
 
 @job.command(name="select")
@@ -457,10 +499,23 @@ def config_job(ctx, job_id: str | None, objective: str, details: str, acceptance
 @click.argument("job_id", required=False)
 @click.option("--model", default="grok-code-fast-1", help="LLM model for execution")
 @click.option("--resume", is_flag=True, help="Resume from last checkpoint")
+@click.option("--runner", help="Override runner for this execution (podman, docker, kubernetes, direct)")
+@click.option("--agent", help="Override agent provider for this execution (cline-cli, aider-chat, claude-code, etc.)")
 @click.pass_context
-def run(ctx, job_id: str | None, model: str, resume: bool):
-    """Execute a job continuously until completion."""
+def run(ctx, job_id: str | None, model: str, resume: bool, runner: str, agent: str):
+    """Execute a job continuously until completion.
+
+    Runner and agent can be overridden for this execution without modifying the job manifest.
+    """
     click.echo("🎯 Executing 'logist job run'")
+
+    # Store runtime overrides in context for engine access
+    if runner:
+        ctx.obj["RUNNER_OVERRIDE"] = runner
+        click.echo(f"   Using runner override: {runner}")
+    if agent:
+        ctx.obj["AGENT_OVERRIDE"] = agent
+        click.echo(f"   Using agent override: {agent}")
 
     jobs_dir = ctx.obj["JOBS_DIR"]
     jobs_index_path = os.path.join(jobs_dir, "jobs_index.json")
@@ -529,10 +584,28 @@ def run(ctx, job_id: str | None, model: str, resume: bool):
 @click.option(
     "--model", default="grok-code-fast-1", help="Override default model selection for agents"
 )
+@click.option(
+    "--runner", help="Override runner for this execution (podman, docker, kubernetes, direct)"
+)
+@click.option(
+    "--agent", help="Override agent provider for this execution (cline-cli, aider-chat, claude-code, etc.)"
+)
 @click.pass_context
-def step(ctx, job_id: str | None, dry_run: bool, model: str):
-    """Execute single phase of job and pause."""
+def step(ctx, job_id: str | None, dry_run: bool, model: str, runner: str, agent: str):
+    """Execute single phase of job and pause.
+
+    Runner and agent can be overridden for this execution without modifying the job manifest.
+    """
     click.echo("👣 Executing 'logist job step'")
+
+    # Store runtime overrides in context for engine access
+    if runner:
+        ctx.obj["RUNNER_OVERRIDE"] = runner
+        click.echo(f"   Using runner override: {runner}")
+    if agent:
+        ctx.obj["AGENT_OVERRIDE"] = agent
+        click.echo(f"   Using agent override: {agent}")
+
     if final_job_id := get_job_id(ctx, job_id):
         job_dir = get_job_dir(ctx, final_job_id)
         if job_dir is None:

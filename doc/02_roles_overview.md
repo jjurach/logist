@@ -76,7 +76,7 @@ Every agent execution must terminate with a machine-readable **JSON Exit Command
 
 ### Agent Output Requirements
 All agents must:
-1. Perform their specialized work using Cline CLI commands
+1. Perform their specialized work using the configured AI coding agent (Cline, Aider, Claude Code, etc.)
 2. Generate any required output files in the job directory
 3. Output exactly one valid JSON exit command
 4. Not include any text outside the JSON structure

@@ -3,13 +3,13 @@
 ## Core Terminology
 
 ### Logist (Tool/Project)
-Logist is the primary orchestration tool that manages the execution of isolated, persistent jobs. It uses a Node.js-based tool, **`cline`**, as the fundamental execution primitive for running agentic tasks. It handles state management, resource tracking, Git safety practices, and flow control between automated agents and human checkpoints.
+Logist is the primary orchestration tool that manages the execution of isolated, persistent jobs. It uses a pluggable **Agent Provider** interface to execute AI coding agents (such as Cline, Aider, Claude Code, and others) combined with pluggable **Runners** for execution environments (Podman, Docker, Kubernetes, or direct host execution). It handles state management, resource tracking, Git safety practices, and flow control between automated agents and human checkpoints.
 
 ### Job (Unit of Work)
 A **Job** represents a single, self-contained unit of work that requires persistent execution across multiple agent interactions. Each job is completely isolated - the Logist clones the current Git state before beginning work, creating a baseline hash that ensures safety and allows complete rollback if needed.
 
 ### Agent Run (Execution Step)
-An **Agent Run** is a single execution of a Cline CLI command by a specialized agent (Worker or Supervisor). Each run either advances the job state or signals that human intervention (via The Steward) is required.
+An **Agent Run** is a single execution of an AI coding agent (e.g., Cline, Aider, or Claude Code) by a specialized role (Worker or Supervisor). Each run either advances the job state or signals that human intervention (via The Steward) is required.
 
 ### Jobs Index (`jobs_index.json`)
 The **Jobs Index** is the central registry for all jobs managed by Logist. Located in the user's configurable jobs directory (specified with `--jobs-dir`, defaulting to `~/.logist/jobs`), this file maintains two key pieces of information:
@@ -44,7 +44,7 @@ The isolation system uses:
 - **Symlinked Worktree**: The workspace directory uses a symlinked `.git` file pointing to the bare repository, enabling transparent git operations within the workspace
 - **Automatic Setup**: The prepare-python-project.sh script is automatically executed if available to ensure the workspace is properly initialized
 
-This isolated environment serves as a staging area where "coder" agents can perform their work, including making a series of local Git commits with descriptive messages.
+This isolated environment serves as a staging area where AI coding agents can perform their work, including making a series of local Git commits with descriptive messages.
 
 Key components of this strategy include:
 - **Baseline Hash**: The commit hash of the original repository at the moment the job branch is created, providing a clean rollback point

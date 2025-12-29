@@ -1,7 +1,7 @@
 """
-Mock Runtime Implementation for Logist
+Mock Runner Implementation for Logist
 
-This module provides a MockRuntime that simulates Runtime behavior for testing
+This module provides a MockRunner that simulates Runner behavior for testing
 purposes without requiring actual process execution or external dependencies.
 """
 
@@ -11,20 +11,20 @@ import random
 from typing import List, Dict, Optional, Tuple, Any
 from pathlib import Path
 
-from .base import Runtime
+from .base import Runner
 
 
-class MockRuntime(Runtime):
+class MockRunner(Runner):
     """
-    Mock runtime that simulates process execution for testing.
+    Mock runner that simulates process execution for testing.
 
-    This runtime provides realistic simulation of process lifecycles,
+    This runner provides realistic simulation of process lifecycles,
     log streaming, and termination behaviors without spawning actual processes.
     """
 
     def __init__(self, working_dir: Optional[str] = None):
         """
-        Initialize the MockRuntime.
+        Initialize the MockRunner.
 
         Args:
             working_dir: Optional working directory (ignored for mock)
@@ -363,14 +363,14 @@ class MockRuntime(Runtime):
 
     @property
     def name(self) -> str:
-        """Get the runtime name."""
-        return "Mock Runtime"
+        """Get the runner name."""
+        return "Mock Runner"
 
     def provision(self, job_dir: str, workspace_dir: str) -> Dict[str, Any]:
         """
         Provision workspace for mock job execution.
 
-        For mock runtime, this is a no-op that always succeeds.
+        For mock runner, this is a no-op that always succeeds.
 
         Args:
             job_dir: Job directory path
@@ -391,7 +391,7 @@ class MockRuntime(Runtime):
         """
         Harvest results from mock job execution.
 
-        For mock runtime, this is a no-op that always succeeds.
+        For mock runner, this is a no-op that always succeeds.
 
         Args:
             job_dir: Job directory path
@@ -412,5 +412,5 @@ class MockRuntime(Runtime):
 
     @property
     def version(self) -> str:
-        """Get the runtime version."""
+        """Get the runner version."""
         return "1.0.0"

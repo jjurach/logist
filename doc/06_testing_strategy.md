@@ -95,7 +95,62 @@ logist job run run-test-job
 assert_job_completed run-test-job
 ```
 
-### 3. Mock Testing Infrastructure
+### 3. Runner and Agent Configuration for Testing
+
+#### The Direct Runner and Mock Agent
+
+For testing Logist without incurring API costs or container overhead, use the **direct runner** with the **mock agent**:
+
+```yaml
+# logist.yml - Testing configuration
+runner: direct
+agent: mock
+
+runners:
+  direct:
+    timeout: 30  # Short timeout for tests
+
+agents:
+  mock:
+    mode: success  # Default simulation mode
+```
+
+**Why this configuration works for testing:**
+
+1. **Direct Runner**: Minimal I/O transformation - executes agent commands directly on the host without container setup. This provides:
+   - Fast test execution (no container startup time)
+   - Direct access to filesystem for assertions
+   - Easy debugging with standard tools
+
+2. **Mock Agent**: Provides `echo` commands that return predictable mock responses. This enables:
+   - Deterministic test outcomes
+   - No API costs during development
+   - Testing of all code paths (success, error, timeout)
+
+**Mock Agent Modes:**
+
+| Mode | Description | Use Case |
+|------|-------------|----------|
+| `success` | Simulates successful completion | Normal flow testing |
+| `hang` | Simulates hanging process | Timeout detection testing |
+| `api_error` | Simulates API rate limiting | Error handling testing |
+| `context_full` | Simulates token limit exceeded | Context management testing |
+| `auth_error` | Simulates auth failure | Authentication testing |
+
+**Programmatic Mode Selection:**
+
+```python
+# In tests, set the mock agent mode via environment
+import os
+os.environ['MOCK_AGENT_MODE'] = 'api_error'
+
+# Or via the MockRunner directly
+from logist.runners.mock import MockRunner
+runner = MockRunner()
+# Mode is read from MOCK_AGENT_MODE environment variable
+```
+
+### 4. Mock Testing Infrastructure
 
 #### Job History as Test Fixtures
 

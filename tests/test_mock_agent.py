@@ -10,7 +10,7 @@ import time
 from unittest.mock import patch, MagicMock
 
 from src.logist.agents.mock import MockAgent
-from src.logist.runtimes.host import HostRuntime
+from src.logist.runners.host import HostRunner
 
 
 class TestMockAgent:
@@ -64,7 +64,7 @@ class TestMockAgent:
 class TestMockAgentIntegration:
     """Integration tests combining MockAgent with HostRuntime."""
 
-    def test_mock_agent_success_execution(self, mock_runtime, mock_agent):
+    def test_mock_agent_success_execution(self, mock_runner, mock_agent):
         """Test successful execution of MockAgent."""
         # Set up the agent
         mock_agent.set_prompt("test successful execution")
@@ -74,17 +74,17 @@ class TestMockAgentIntegration:
         env = mock_agent.env()
 
         # Spawn the process
-        process_id = mock_runtime.spawn(cmd, env)
+        process_id = mock_runner.spawn(cmd, env)
 
         # Wait for completion
-        exit_code, logs = mock_runtime.wait(process_id, timeout=30)
+        exit_code, logs = mock_runner.wait(process_id, timeout=30)
 
         # Verify successful execution
         assert exit_code == 0
         assert "Task completed successfully" in logs
         assert "Thinking..." in logs
 
-    def test_mock_agent_api_error_execution(self, mock_runtime):
+    def test_mock_agent_api_error_execution(self, mock_runner):
         """Test MockAgent execution with API error mode."""
         # Set mode to api_error
         original_mode = os.environ.get('MODE')
@@ -96,8 +96,8 @@ class TestMockAgentIntegration:
             env = agent.env()
 
             # Spawn and wait
-            process_id = mock_runtime.spawn(cmd, env)
-            exit_code, logs = mock_runtime.wait(process_id, timeout=10)
+            process_id = mock_runner.spawn(cmd, env)
+            exit_code, logs = mock_runner.wait(process_id, timeout=10)
 
             # Verify error execution
             assert exit_code == 1
@@ -110,7 +110,7 @@ class TestMockAgentIntegration:
             else:
                 os.environ.pop('MODE', None)
 
-    def test_mock_agent_context_full_execution(self, mock_runtime):
+    def test_mock_agent_context_full_execution(self, mock_runner):
         """Test MockAgent execution with context full error mode."""
         original_mode = os.environ.get('MODE')
         os.environ['MODE'] = 'context_full'
@@ -120,8 +120,8 @@ class TestMockAgentIntegration:
             cmd = agent.cmd("test context full")
             env = agent.env()
 
-            process_id = mock_runtime.spawn(cmd, env)
-            exit_code, logs = mock_runtime.wait(process_id, timeout=10)
+            process_id = mock_runner.spawn(cmd, env)
+            exit_code, logs = mock_runner.wait(process_id, timeout=10)
 
             assert exit_code == 1
             assert "Token limit exceeded" in logs
@@ -133,7 +133,7 @@ class TestMockAgentIntegration:
             else:
                 os.environ.pop('MODE', None)
 
-    def test_mock_agent_hang_detection_setup(self, mock_runtime):
+    def test_mock_agent_hang_detection_setup(self, mock_runner):
         """Test that hang mode can be initiated (doesn't wait for completion)."""
         original_mode = os.environ.get('MODE')
         os.environ['MODE'] = 'hang'
@@ -144,20 +144,20 @@ class TestMockAgentIntegration:
             env = agent.env()
 
             # Start the process
-            process_id = mock_runtime.spawn(cmd, env)
+            process_id = mock_runner.spawn(cmd, env)
 
             # Let it start and begin hanging
             time.sleep(2)
 
             # Verify it's still alive initially
-            assert mock_runtime.is_alive(process_id)
+            assert mock_runner.is_alive(process_id)
 
             # Get some logs to verify it started
-            logs = mock_runtime.get_logs(process_id)
+            logs = mock_runner.get_logs(process_id)
             assert "Thinking..." in logs
 
             # Terminate it before it hangs too long
-            assert mock_runtime.terminate(process_id, force=True)
+            assert mock_runner.terminate(process_id, force=True)
 
         finally:
             if original_mode is not None:
@@ -175,7 +175,7 @@ class TestMockAgentParameterized:
         ("context_full", 1, "Token limit exceeded"),
         ("auth_error", 1, "Authentication failed"),
     ])
-    def test_mock_agent_modes(self, mock_runtime, mode, expected_exit_code, expected_log_pattern):
+    def test_mock_agent_modes(self, mock_runner, mode, expected_exit_code, expected_log_pattern):
         """Test MockAgent execution across different modes."""
         original_mode = os.environ.get('MODE')
         os.environ['MODE'] = mode
@@ -185,8 +185,8 @@ class TestMockAgentParameterized:
             cmd = agent.cmd(f"test {mode} mode")
             env = agent.env()
 
-            process_id = mock_runtime.spawn(cmd, env)
-            exit_code, logs = mock_runtime.wait(process_id, timeout=15)
+            process_id = mock_runner.spawn(cmd, env)
+            exit_code, logs = mock_runner.wait(process_id, timeout=15)
 
             assert exit_code == expected_exit_code
             assert expected_log_pattern in logs

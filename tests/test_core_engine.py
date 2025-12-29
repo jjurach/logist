@@ -13,7 +13,7 @@ from unittest.mock import patch, MagicMock, call
 
 from logist.core_engine import LogistEngine
 from logist.job_state import JobStates
-from logist.runtimes.mock import MockRuntime
+from logist.runners.mock import MockRunner
 
 
 class TestLogistEngine(unittest.TestCase):
@@ -21,8 +21,8 @@ class TestLogistEngine(unittest.TestCase):
 
     def setUp(self):
         """Set up test fixtures."""
-        self.mock_runtime = MockRuntime()
-        self.engine = LogistEngine(runner=self.mock_runtime)
+        self.mock_runner = MockRunner()
+        self.engine = LogistEngine(runner=self.mock_runner)
         self.test_dir = tempfile.mkdtemp()
         self.job_dir = os.path.join(self.test_dir, "test-job")
         os.makedirs(self.job_dir)

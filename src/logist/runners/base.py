@@ -1,8 +1,8 @@
 """
-Base Runtime Interface for Logist
+Base Runner Interface for Logist
 
-This module defines the abstract base class for all Runtime implementations in Logist.
-Runtimes are responsible for executing agent commands in various environments
+This module defines the abstract base class for all Runner implementations in Logist.
+Runners are responsible for executing agent commands in various environments
 (Docker containers, host processes, remote systems, etc.).
 """
 
@@ -11,17 +11,17 @@ from typing import List, Dict, Optional, Tuple, Any
 import subprocess
 
 
-class Runtime(ABC):
+class Runner(ABC):
     """
-    Abstract base class for all Logist runtime environments.
+    Abstract base class for all Logist runner environments.
 
-    Runtimes handle the execution of agent commands, providing isolation,
+    Runners handle the execution of agent commands, providing isolation,
     monitoring, and resource management capabilities.
     """
 
     def __init__(self, working_dir: Optional[str] = None):
         """
-        Initialize the runtime.
+        Initialize the runner.
 
         Args:
             working_dir: Optional working directory for process execution
@@ -111,10 +111,10 @@ class Runtime(ABC):
     @abstractmethod
     def name(self) -> str:
         """
-        Get the human-readable name of this runtime.
+        Get the human-readable name of this runner.
 
         Returns:
-            String identifier for the runtime type
+            String identifier for the runner type
         """
         pass
 
@@ -122,7 +122,7 @@ class Runtime(ABC):
     @abstractmethod
     def version(self) -> str:
         """
-        Get the version of this runtime implementation.
+        Get the version of this runner implementation.
 
         Returns:
             Version string (e.g., "1.0.0")
