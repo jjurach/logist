@@ -50,45 +50,45 @@ class TestValidStateTransitions:
     def test_draft_transitions(self):
         """Test valid transitions from DRAFT state."""
         # DRAFT -> PENDING (activation)
-        result = transition_state(JobStates.DRAFT, "System", "ACTIVATED")
+        result = transition_state(JobStates.DRAFT, "ACTIVATED")
         assert result == JobStates.PENDING
 
         # DRAFT -> SUSPENDED (suspend)
-        result = transition_state(JobStates.DRAFT, "System", "SUSPEND")
+        result = transition_state(JobStates.DRAFT, "SUSPEND")
         assert result == JobStates.SUSPENDED
 
     def test_pending_transitions(self):
         """Test valid transitions from PENDING state."""
-        # PENDING -> RUNNING (worker execution)
-        result = transition_state(JobStates.PENDING, "Worker", "COMPLETED")
+        # PENDING -> RUNNING (execution)
+        result = transition_state(JobStates.PENDING, "COMPLETED")
         assert result == JobStates.RUNNING
 
         # PENDING -> SUSPENDED (suspend)
-        result = transition_state(JobStates.PENDING, "System", "SUSPEND")
+        result = transition_state(JobStates.PENDING, "SUSPEND")
         assert result == JobStates.SUSPENDED
 
     def test_suspended_transitions(self):
         """Test valid transitions from SUSPENDED state."""
         # SUSPENDED -> PENDING (resume)
-        result = transition_state(JobStates.SUSPENDED, "System", "RESUME")
+        result = transition_state(JobStates.SUSPENDED, "RESUME")
         assert result == JobStates.PENDING
 
     def test_running_transitions(self):
         """Test valid transitions from RUNNING state."""
-        # RUNNING -> REVIEW_REQUIRED (worker completion)
-        result = transition_state(JobStates.RUNNING, "Worker", "COMPLETED")
+        # RUNNING -> REVIEW_REQUIRED (completion)
+        result = transition_state(JobStates.RUNNING, "COMPLETED")
         assert result == JobStates.REVIEW_REQUIRED
 
-        # RUNNING -> INTERVENTION_REQUIRED (worker stuck)
-        result = transition_state(JobStates.RUNNING, "Worker", "STUCK")
+        # RUNNING -> INTERVENTION_REQUIRED (stuck)
+        result = transition_state(JobStates.RUNNING, "STUCK")
         assert result == JobStates.INTERVENTION_REQUIRED
 
-        # RUNNING -> PENDING (worker retry)
-        result = transition_state(JobStates.RUNNING, "Worker", "RETRY")
+        # RUNNING -> PENDING (retry)
+        result = transition_state(JobStates.RUNNING, "RETRY")
         assert result == JobStates.PENDING
 
         # RUNNING -> SUSPENDED (suspend)
-        result = transition_state(JobStates.RUNNING, "System", "SUSPEND")
+        result = transition_state(JobStates.RUNNING, "SUSPEND")
         assert result == JobStates.SUSPENDED
 
     def test_supervisor_transitions(self):
@@ -97,11 +97,11 @@ class TestValidStateTransitions:
         # Note: This transition isn't directly in our current table, but REVIEWING transitions work
 
         # REVIEWING -> APPROVAL_REQUIRED (supervisor completes review)
-        result = transition_state(JobStates.REVIEWING, "Supervisor", "COMPLETED")
+        result = transition_state(JobStates.REVIEWING, "COMPLETED")
         assert result == JobStates.APPROVAL_REQUIRED
 
         # REVIEWING -> INTERVENTION_REQUIRED (supervisor finds issues)
-        result = transition_state(JobStates.REVIEWING, "Supervisor", "STUCK")
+        result = transition_state(JobStates.REVIEWING, "STUCK")
         assert result == JobStates.INTERVENTION_REQUIRED
 
     def test_suspend_from_all_states(self):
@@ -113,7 +113,7 @@ class TestValidStateTransitions:
         ]
 
         for state in suspendable_states:
-            result = transition_state(state, "System", "SUSPEND")
+            result = transition_state(state, "SUSPEND")
             assert result == JobStates.SUSPENDED, f"Failed to suspend from {state}"
 
     def test_fallback_transitions(self):
@@ -166,7 +166,7 @@ class TestInvalidStateTransitions:
     def test_invalid_transition_action(self):
         """Test that invalid transition actions raise errors."""
         with pytest.raises(JobStateError, match="Invalid state transition"):
-            transition_state(JobStates.PENDING, "Worker", "INVALID_ACTION")
+            transition_state(JobStates.PENDING, "INVALID_ACTION")
 
     def test_suspend_terminal_states_blocked(self):
         """Test that terminal states cannot be suspended."""
@@ -174,7 +174,7 @@ class TestInvalidStateTransitions:
 
         for state in terminal_states:
             with pytest.raises(JobStateError, match=f"Cannot suspend job in state: {state}"):
-                transition_state(state, "System", "SUSPEND")
+                transition_state(state, "SUSPEND")
 
 
 class TestStateValidation:
@@ -302,13 +302,13 @@ class TestStateMachineErrorHandling:
     def test_invalid_transition_action(self):
         """Test handling of invalid transition actions."""
         with pytest.raises(JobStateError, match="Invalid state transition"):
-            transition_state(JobStates.PENDING, "InvalidAgent", "INVALID_ACTION")
+            transition_state(JobStates.PENDING, "INVALID_ACTION")
 
     def test_missing_transition_definition(self):
         """Test handling of missing transition definitions."""
         # Try a transition that doesn't exist in our table
         with pytest.raises(JobStateError):
-            transition_state(JobStates.APPROVAL_REQUIRED, "Worker", "INVALID")
+            transition_state(JobStates.APPROVAL_REQUIRED, "INVALID")
 
     def test_state_validation_error_messages(self):
         """Test that validation errors provide helpful messages."""

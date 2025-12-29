@@ -61,7 +61,6 @@ class TestJobContextAssembly:
             job_dir=str(self.job_dir),
             job_manifest=manifest,
             jobs_dir=str(self.jobs_dir),
-            active_role="worker",
             enhance=False
         )
 
@@ -72,11 +71,9 @@ class TestJobContextAssembly:
         assert "status" in context
         assert "current_phase" in context
         assert "workspace_files" in context
-        assert "role_name" in context
-        assert "role_model" in context
 
         # Enhanced context should NOT be present
-        assert "role_instructions" not in context
+        assert "system_instructions" not in context
         assert "job_history_summary" not in context
         assert "job_metrics_summary" not in context
         assert "all_phases" not in context
@@ -124,7 +121,6 @@ class TestJobContextAssembly:
             job_dir=str(self.job_dir),
             job_manifest=manifest,
             jobs_dir=str(self.jobs_dir),
-            active_role="worker",
             enhance=True
         )
 
@@ -135,9 +131,7 @@ class TestJobContextAssembly:
         assert "status" in context
         assert "current_phase" in context
         assert "phase_specification" in context
-        assert "role_name" in context
-        assert "role_instructions" in context
-        assert "role_model" in context
+        assert "system_instructions" in context
         assert "workspace_files" in context
         assert "workspace_git_status" in context
         assert "job_history_summary" in context
@@ -145,8 +139,8 @@ class TestJobContextAssembly:
         assert "all_phases" in context
 
         # Check specific enhanced fields
-        expected_instructions = "# System Role\n\nSystem instructions\n\n---\n\n# Worker Role\n\nDo work professionally"
-        assert context["role_instructions"] == expected_instructions
+        expected_instructions = "# System Role\n\nSystem instructions"
+        assert context["system_instructions"] == expected_instructions
         assert context["job_metrics_summary"] == "Total cost: $2.5000, Total time: 30.00s"
 
     def test_context_assembly_with_missing_job_manifest(self):
@@ -161,7 +155,6 @@ class TestJobContextAssembly:
             job_dir=str(self.job_dir),
             job_manifest=manifest,
             jobs_dir=str(self.jobs_dir),
-            active_role="worker",
             enhance=False
         )
 
@@ -187,7 +180,6 @@ class TestJobContextAssembly:
             job_dir=str(self.job_dir),
             job_manifest=manifest,
             jobs_dir=str(self.jobs_dir),
-            active_role="worker",
             enhance=False
         )
 

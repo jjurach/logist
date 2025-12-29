@@ -10,7 +10,7 @@ import subprocess
 from typing import Dict, Any, List, Optional
 
 from logist import workspace_utils
-from logist.job_state import JobStateError, load_job_manifest, get_current_state_and_role, update_job_manifest, transition_state, JobStates
+from logist.job_state import JobStateError, load_job_manifest, get_current_state, update_job_manifest, transition_state, JobStates
 from logist.job_processor import (
     execute_llm_with_cline, handle_execution_error, validate_evidence_files, JobProcessorError,
     save_latest_outcome, prepare_outcome_for_attachments, enhance_context_with_previous_outcome
@@ -264,9 +264,10 @@ class LogistEngine:
             # Placeholder for threshold checking - full implementation moved to CLI layer
             pass
 
-            # 3. Determine current phase and active role
-            current_phase_name, active_role = get_current_state_and_role(manifest)
-            print(f"   → Current Phase: {current_phase_name}, Active Role: {active_role}")
+            # 3. Determine current phase
+            current_phase_name = get_current_state(manifest)
+            active_role = "agent"  # Simplified - no role distinction
+            print(f"   → Current Phase: {current_phase_name}")
 
             # 4. Prepare workspace with attachments and file discovery
             workspace_dir = os.path.join(job_dir, "workspace")
@@ -288,7 +289,7 @@ class LogistEngine:
                 print(f"   🏆 Prepared outcome data from previous {len(outcome_prep['attachments_added'])} steps")
 
             # 7. Assemble job context with enhanced preparation
-            context = assemble_job_context(job_dir, manifest, ctx.obj["JOBS_DIR"], active_role, enhance=ctx.obj.get("ENHANCE", False))
+            context = assemble_job_context(job_dir, manifest, ctx.obj["JOBS_DIR"], enhance=ctx.obj.get("ENHANCE", False))
             context = enhance_context_with_previous_outcome(context, job_dir)
 
             # 8. Copy prompt.md to workspace/tmp/ for Apply command
@@ -371,7 +372,7 @@ class LogistEngine:
                 print("   📁 No evidence files reported.")
 
             # 11. Update job manifest
-            new_status = transition_state(current_status, active_role, response_action)
+            new_status = transition_state(current_status, response_action)
 
             history_entry = {
                 "role": active_role,
@@ -696,7 +697,7 @@ class LogistEngine:
 
             # 4. Assemble job context for the target phase
             workspace_path = os.path.join(job_dir, "workspace")
-            context = assemble_job_context(job_dir, restep_manifest, ctx.obj["JOBS_DIR"], active_role, enhance=False)
+            context = assemble_job_context(job_dir, restep_manifest, ctx.obj["JOBS_DIR"], enhance=False)
 
             # 6. Execute LLM with Cline
             processed_response, execution_time = execute_llm_with_cline(

@@ -62,50 +62,42 @@ def load_job_manifest(job_dir: str) -> Dict[str, Any]:
     except OSError as e:
         raise JobStateError(f"Error reading job manifest file {manifest_path}: {e}")
 
-def get_current_state_and_role(manifest: Dict[str, Any]) -> Tuple[str, str]:
+def get_current_state(manifest: Dict[str, Any]) -> str:
     """
-    Determines the current phase and the active agent role (Worker/Supervisor)
-    based on the job manifest.
-    
+    Determines the current phase based on the job manifest.
+
     Args:
         manifest: The job manifest dictionary.
-        
+
     Returns:
-        A tuple containing (current_phase: str, active_role: str).
-        
+        The current phase name as a string.
+
     Raises:
         JobStateError: If current_phase or phases are missing/invalid in the manifest.
     """
     current_phase_name = manifest.get("current_phase")
     phases = manifest.get("phases")
-    
+
     if not current_phase_name:
         raise JobStateError("Job manifest is missing 'current_phase'.")
-    
+
     if not isinstance(phases, list) or not phases:
         raise JobStateError("Job manifest is missing or has an invalid 'phases' list.")
-        
+
     current_phase_data = next((p for p in phases if p.get("name") == current_phase_name), None)
-    
+
     if not current_phase_data:
         raise JobStateError(f"Phase '{current_phase_name}' not found in job manifest phases.")
-        
-    # Determine the active role based on the phase's state or a simple default logic
-    # For now, let's assume 'Worker' is the default and 'Supervisor' if a specific
-    # condition is met (e.g., Worker has completed its part for the phase)
-    # This logic will need to be expanded as the state machine evolves.
-    active_role = current_phase_data.get("active_agent", "Worker") # Default to Worker
 
-    return current_phase_name, active_role
+    return current_phase_name
 
 
-def transition_state(current_status: str, agent_role: str, response_action: str) -> str:
+def transition_state(current_status: str, response_action: str) -> str:
     """
-    Determines the next state based on current status, agent role, and LLM response action.
+    Determines the next state based on current status and LLM response action.
 
     Args:
         current_status: Current job status (e.g., "DRAFT", "PENDING", "RUNNING").
-        agent_role: The agent that executed ("Worker" or "Supervisor").
         response_action: LLM response action ("COMPLETED", "STUCK", "RETRY", "ACTIVATED", "SUSPEND", "RESUME").
 
     Returns:
@@ -115,39 +107,39 @@ def transition_state(current_status: str, agent_role: str, response_action: str)
         JobStateError: If an invalid state transition is attempted.
     """
     # State machine transitions based on 04_state_machine.md
-    # Includes DRAFT as initial state and ACTIVATED transition from DRAFT→PENDING
+    # Simplified to remove role-based logic
     transitions = {
         # DRAFT state transitions (only ACTIVATED is allowed from DRAFT)
-        (JobStates.DRAFT, "System", "ACTIVATED"): JobStates.PENDING,
+        (JobStates.DRAFT, "ACTIVATED"): JobStates.PENDING,
 
         # SUSPENDED state transitions - can suspend from most states
-        (JobStates.DRAFT, "System", "SUSPEND"): JobStates.SUSPENDED,
-        (JobStates.PENDING, "System", "SUSPEND"): JobStates.SUSPENDED,
-        (JobStates.RUNNING, "System", "SUSPEND"): JobStates.SUSPENDED,
-        (JobStates.REVIEW_REQUIRED, "System", "SUSPEND"): JobStates.SUSPENDED,
-        (JobStates.REVIEWING, "System", "SUSPEND"): JobStates.SUSPENDED,
-        (JobStates.APPROVAL_REQUIRED, "System", "SUSPEND"): JobStates.SUSPENDED,
-        (JobStates.INTERVENTION_REQUIRED, "System", "SUSPEND"): JobStates.SUSPENDED,
+        (JobStates.DRAFT, "SUSPEND"): JobStates.SUSPENDED,
+        (JobStates.PENDING, "SUSPEND"): JobStates.SUSPENDED,
+        (JobStates.RUNNING, "SUSPEND"): JobStates.SUSPENDED,
+        (JobStates.REVIEW_REQUIRED, "SUSPEND"): JobStates.SUSPENDED,
+        (JobStates.REVIEWING, "SUSPEND"): JobStates.SUSPENDED,
+        (JobStates.APPROVAL_REQUIRED, "SUSPEND"): JobStates.SUSPENDED,
+        (JobStates.INTERVENTION_REQUIRED, "SUSPEND"): JobStates.SUSPENDED,
 
         # Resume transitions - SUSPENDED can resume to various states
-        (JobStates.SUSPENDED, "System", "RESUME"): JobStates.PENDING,  # Default resume target
+        (JobStates.SUSPENDED, "RESUME"): JobStates.PENDING,  # Default resume target
 
-        # PENDING and execution transitions
-        (JobStates.PENDING, "Worker", "COMPLETED"): JobStates.RUNNING,  # Should actually go to REVIEW_REQUIRED after worker
-        (JobStates.RUNNING, "Worker", "COMPLETED"): JobStates.REVIEW_REQUIRED,
-        (JobStates.RUNNING, "Worker", "STUCK"): JobStates.INTERVENTION_REQUIRED,
-        (JobStates.RUNNING, "Worker", "RETRY"): JobStates.PENDING,
+        # Execution transitions (simplified without role distinctions)
+        (JobStates.PENDING, "COMPLETED"): JobStates.RUNNING,
+        (JobStates.RUNNING, "COMPLETED"): JobStates.REVIEW_REQUIRED,
+        (JobStates.RUNNING, "STUCK"): JobStates.INTERVENTION_REQUIRED,
+        (JobStates.RUNNING, "RETRY"): JobStates.PENDING,
 
-        (JobStates.REVIEW_REQUIRED, "Supervisor", "COMPLETED"): JobStates.APPROVAL_REQUIRED,
-        (JobStates.REVIEW_REQUIRED, "Supervisor", "STUCK"): JobStates.INTERVENTION_REQUIRED,
-        (JobStates.REVIEW_REQUIRED, "Supervisor", "RETRY"): JobStates.REVIEW_REQUIRED,
+        (JobStates.REVIEW_REQUIRED, "COMPLETED"): JobStates.APPROVAL_REQUIRED,
+        (JobStates.REVIEW_REQUIRED, "STUCK"): JobStates.INTERVENTION_REQUIRED,
+        (JobStates.REVIEW_REQUIRED, "RETRY"): JobStates.REVIEW_REQUIRED,
 
-        (JobStates.REVIEWING, "Supervisor", "COMPLETED"): JobStates.APPROVAL_REQUIRED,
-        (JobStates.REVIEWING, "Supervisor", "STUCK"): JobStates.INTERVENTION_REQUIRED,
-        (JobStates.REVIEWING, "Supervisor", "RETRY"): JobStates.REVIEW_REQUIRED,
+        (JobStates.REVIEWING, "COMPLETED"): JobStates.APPROVAL_REQUIRED,
+        (JobStates.REVIEWING, "STUCK"): JobStates.INTERVENTION_REQUIRED,
+        (JobStates.REVIEWING, "RETRY"): JobStates.REVIEW_REQUIRED,
     }
 
-    key = (current_status, agent_role, response_action)
+    key = (current_status, response_action)
     if key in transitions:
         return transitions[key]
 
@@ -163,7 +155,7 @@ def transition_state(current_status: str, agent_role: str, response_action: str)
         else:
             raise JobStateError(f"Cannot suspend job in state: {current_status}")
     else:
-        raise JobStateError(f"Invalid state transition: {current_status} + {agent_role} + {response_action}")
+        raise JobStateError(f"Invalid state transition: {current_status} + {response_action}")
 
 
 def transition_state_on_error(current_status: str, error_classification: Any) -> str:
@@ -254,14 +246,13 @@ def get_error_recovery_options(current_status: str) -> Dict[str, Any]:
     })
 
 
-def validate_state_transition(current_status: str, target_status: str, agent_role: str = "System", action: str = "") -> bool:
+def validate_state_transition(current_status: str, target_status: str, action: str = "") -> bool:
     """
     Comprehensive validation of state transitions according to the enhanced state machine.
 
     Args:
         current_status: Current job status.
         target_status: Target status for transition.
-        agent_role: Agent role performing the action (default: "System").
         action: Action being performed (for logging/validation).
 
     Returns:
@@ -325,8 +316,9 @@ def validate_state_transition(current_status: str, target_status: str, agent_rol
             raise JobStateError(f"INTERVENTION_REQUIRED jobs can only transition to {valid_intervention_targets}, not '{target_status}'")
 
     # ATTACHED/DETACHED validation for attach/recover sessions
+    # Note: ATTACHED/DETACHED states are legacy and may be removed in future versions
     if current_status == JobStates.ATTACHED:
-        valid_attached_targets = {JobStates.SUPERVISOR_REVIEW, JobStates.SUSPENDED, JobStates.DETACHED}
+        valid_attached_targets = {JobStates.SUSPENDED, JobStates.DETACHED}
         if target_status not in valid_attached_targets:
             raise JobStateError(f"ATTACHED sessions can only transition to {valid_attached_targets}, not '{target_status}'")
 

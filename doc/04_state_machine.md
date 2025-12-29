@@ -25,7 +25,7 @@ These states describe the normal, automated execution path of a task.
     * **Purpose:** Allows temporary exclusion from execution while preserving state for resumption.
 
 * **RUNNING**
-    * **Description:** An agent is actively executing (Worker by default, but may be Supervisor depending on state transitions).
+    * **Description:** An agent is actively executing.
     * **Transition From:** PENDING, PAUSED.
     * **Next Automated States:** REVIEW_REQUIRED (always - command-driven flow).
 
@@ -54,13 +54,13 @@ These states describe the normal, automated execution path of a task.
 These states define **what command runs next** when `logist job step` is executed, rather than representing assessments of current status.
 
 * **REVIEW\_REQUIRED**
-    * **Description:** Run the Supervisor in --oneshot mode to assess the Worker's completed task.
-    * **Semantic Role:** **Automated Quality Check:** Supervisor evaluates Worker output and determines quality/recommendations.
+    * **Description:** Review process is required to assess completed work.
+    * **Semantic Role:** **Automated Quality Check:** System evaluates output and determines quality/recommendations.
     * **Next State:** REVIEWING.
 
 * **REVIEWING**
-    * **Description:** Supervisor is actively executing in --oneshot mode to review Worker results.
-    * **Semantic Role:** **Active Assessment Execution:** Analogous to RUNNING but specifically for Supervisor operations.
+    * **Description:** Review process is actively executing to assess results.
+    * **Semantic Role:** **Active Assessment Execution:** Analogous to RUNNING but specifically for review operations.
     * **Next State:** APPROVAL_REQUIRED or INTERVENTION_REQUIRED.
 
 * **INTERVENTION\_REQUIRED**
@@ -86,8 +86,8 @@ Logist implements a structured error handling flow that cleanly separates concer
 1. **Job Creation**: Create job → `DRAFT` (initial state for configuration)
 2. **Job Configuration**: `DRAFT` + `logist job config` commands → `DRAFT` (modified)
 3. **Job Activation**: `DRAFT` + `logist job activate` → `PENDING` (added to execution queue)
-4. **Worker Execution**: `PENDING` → `RUNNING` (worker) → `REVIEW_REQUIRED`
-5. **Supervisor Review**: `REVIEW_REQUIRED` → `REVIEWING` (supervisor) → `APPROVAL_REQUIRED` or `INTERVENTION_REQUIRED`
+4. **Agent Execution**: `PENDING` → `RUNNING` → `REVIEW_REQUIRED`
+5. **Review Process**: `REVIEW_REQUIRED` → `REVIEWING` → `APPROVAL_REQUIRED` or `INTERVENTION_REQUIRED`
 6. **Human Decisions**: Final gates where humans make approval/rejection/termination decisions
 
 ### System Health Monitoring
@@ -167,25 +167,11 @@ The current state of a job is persisted to the filesystem to ensure that workflo
 | DRAFT | PENDING, SUSPENDED, CANCELED | `logist job activate`, `logist job suspend`, `logist job cancel` |
 | PENDING | RUNNING, SUSPENDED, CANCELED | Scheduler trigger, `logist job suspend`, `logist job cancel` |
 | SUSPENDED | PENDING, CANCELED | `logist job resume`, `logist job cancel` |
-| RUNNING | REVIEW_REQUIRED, SUSPENDED, CANCELED | Worker completion, `logist job suspend`, `logist job cancel` |
+| RUNNING | REVIEW_REQUIRED, SUSPENDED, CANCELED | Agent completion, `logist job suspend`, `logist job cancel` |
 | REVIEW_REQUIRED | REVIEWING, SUSPENDED, CANCELED | `logist job step`, `logist job suspend`, `logist job cancel` |
-| REVIEWING | APPROVAL_REQUIRED, INTERVENTION_REQUIRED, SUSPENDED, CANCELED | Supervisor completion, `logist job suspend`, `logist job cancel` |
+| REVIEWING | APPROVAL_REQUIRED, INTERVENTION_REQUIRED, SUSPENDED, CANCELED | Review completion, `logist job suspend`, `logist job cancel` |
 | APPROVAL_REQUIRED | SUCCESS, PENDING, SUSPENDED, CANCELED | `logist job approve`, `logist job reject`, `logist job suspend`, `logist job cancel` |
 | INTERVENTION_REQUIRED | PENDING, REVIEW_REQUIRED, SUSPENDED, CANCELED | Human intervention, `logist job suspend`, `logist job cancel` |
 | SUCCESS | *Terminal State* | Job completed successfully |
 | CANCELED | *Terminal State* | Job terminated by user |
 | FAILED | *Terminal State* | Job failed (deprecated but kept for compatibility) |
-
-### Attach/Recover Session States
-
-| From State | To States | Trigger/Command |
-|------------|-----------|-----------------|
-| DETACHED | ATTACHED | `logist job attach <job_id>` |
-| ATTACHED | SUPERVISOR_REVIEW, SUSPENDED, DETACHED | Start cycle, `logist job suspend`, `logist job detach` |
-| SUPERVISOR_REVIEW | CODER_IMPLEMENTATION, SUSPENDED, INTERVENTION_REQUIRED, DETACHED | Ready to implement, `logist job suspend`, `logist job detach` |
-| CODER_IMPLEMENTATION | VALIDATION_PENDING, SUPERVISOR_REVIEW, SUSPENDED, DETACHED | Implementation done, `logist job suspend`, `logist job detach` |
-| VALIDATION_PENDING | SUPERVISOR_VALIDATION, CODER_IMPLEMENTATION, DETACHED | Ready to validate, issues found, `logist job detach` |
-| SUPERVISOR_VALIDATION | SUCCESS, CODER_IMPLEMENTATION, SUPERVISOR_REVIEW, INTERVENTION_REQUIRED, DETACHED | Approved, revisions needed, architecture change, help needed, `logist job detach` |
-| INTERVENTION_REQUIRED | SUPERVISOR_REVIEW, FAILED, DETACHED | Human guidance provided, cannot resolve, `logist job detach` |
-| SUCCESS | DETACHED | Session complete |
-| FAILED | DETACHED | Unresolvable issues |

@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Dict, Any, List, Optional
 
 from logist import workspace_utils
-from logist.job_state import JobStateError, load_job_manifest, get_current_state_and_role, update_job_manifest, transition_state, JobStates
+from logist.job_state import JobStateError, load_job_manifest, get_current_state, update_job_manifest, transition_state, JobStates
 
 
 class JobManagerService:

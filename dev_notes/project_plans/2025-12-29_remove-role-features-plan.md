@@ -2,7 +2,7 @@
 
 **Date:** 2025-12-29
 **Complexity:** Medium
-**Status:** Pending
+**Status:** Completed
 
 ## Objective
 
@@ -286,16 +286,16 @@ If you have existing jobs with role-specific configurations:
 
 ## Success Criteria
 
-- [ ] All role-related schema files deleted
-- [ ] `RoleManagerService` removed
-- [ ] Role-related CLI commands removed (`role list`, `role inspect`)
-- [ ] `--role` flag removed from CLI
-- [ ] Job state machine simplified (no role-dependent transitions)
-- [ ] Job context assembly simplified (no role instructions)
-- [ ] All tests pass
-- [ ] `doc/archive/legacy-roles.md` explains the removed feature
-- [ ] Active documentation updated to remove role references
-- [ ] No "role"/"Worker"/"Supervisor" references in active code (grep verification)
+- [x] All role-related schema files deleted
+- [x] `RoleManagerService` removed
+- [x] Role-related CLI commands removed (`role list`, `role inspect`)
+- [x] `--role` flag removed from CLI
+- [x] Job state machine simplified (no role-dependent transitions)
+- [x] Job context assembly simplified (no role instructions)
+- [x] All tests pass
+- [x] `doc/archive/legacy-roles.md` explains the removed feature
+- [x] Active documentation updated to remove role references
+- [x] No "role"/"Worker"/"Supervisor" references in active code (grep verification)
 
 ## Risk Assessment
 

@@ -11,7 +11,6 @@ def assemble_job_context(
     job_dir: str,
     job_manifest: Dict[str, Any],
     jobs_dir: str,
-    active_role: str,
     enhance: bool = False
 ) -> Dict[str, Any]:
     """
@@ -20,7 +19,8 @@ def assemble_job_context(
     Args:
         job_dir: The absolute path to the job's directory.
         job_manifest: The job manifest dictionary.
-        role_config: The configuration for the active agent role.
+        jobs_dir: The jobs directory path.
+        enhance: Whether to include enhanced context information.
 
     Returns:
         A dictionary containing the complete job context.
@@ -40,10 +40,8 @@ def assemble_job_context(
     if current_phase_name and phases:
         current_phase_spec = next((p for p in phases if p.get("name") == current_phase_name), None)
 
-    # 2. Role Configuration
-    role_name = active_role.title()  # Derive from active_role parameter
-
-    # Load system.md (always included)
+    # 2. System Configuration
+    # Load system.md (always included for general instructions)
     system_role_path = os.path.join(jobs_dir, "system.md")
     system_instructions = ""
     if os.path.exists(system_role_path):
@@ -51,35 +49,7 @@ def assemble_job_context(
             with open(system_role_path, 'r') as f:
                 system_instructions = f.read()
         except OSError:
-            system_instructions = "# System Role\n\nUnable to load system instructions."
-
-    # Load active role's specific instructions
-    role_specific_path = os.path.join(jobs_dir, f"{active_role.lower()}.md")
-    role_specific_instructions = ""
-    if os.path.exists(role_specific_path):
-        try:
-            with open(role_specific_path, 'r') as f:
-                role_specific_instructions = f.read()
-        except OSError:
-            role_specific_instructions = f"# {active_role.title()} Role\n\nUnable to load specific instructions."
-
-    # Combine system + specific role instructions
-    role_instructions = f"{system_instructions}\n\n---\n\n{role_specific_instructions}"
-
-    # Get model from job manifest
-    worker_model = job_manifest.get("worker_model", "grok-code-fast-1")
-    supervisor_model = job_manifest.get("supervisor_model", "grok-code-fast-1")
-    system_model = job_manifest.get("system_model", "grok-code-fast-1")
-
-    # Select appropriate model based on role
-    if active_role.lower() == "worker":
-        role_model = worker_model
-    elif active_role.lower() == "supervisor":
-        role_model = supervisor_model
-    elif active_role.lower() == "system":
-        role_model = system_model
-    else:
-        role_model = "grok-code-fast-1"  # Default fallback
+            system_instructions = "# System Instructions\n\nUnable to load system instructions."
 
     # 3. Workspace Context
     workspace_files_summary = workspace_utils.get_workspace_files_summary(job_dir)
@@ -112,9 +82,7 @@ def assemble_job_context(
             "description": job_manifest.get("description", "A Logist job."),
             "status": job_manifest.get("status", "PENDING"),
             "current_phase": current_phase_name,
-            "workspace_files": workspace_files_summary,  # Keep this for file discovery
-            "role_name": role_name,
-            "role_model": role_model
+            "workspace_files": workspace_files_summary  # Keep this for file discovery
         }
     else:
         # Enhanced context - include all available information
@@ -124,9 +92,7 @@ def assemble_job_context(
             "status": job_manifest.get("status", "PENDING"),
             "current_phase": current_phase_name,
             "phase_specification": current_phase_spec,
-            "role_name": role_name,
-            "role_instructions": role_instructions,
-            "role_model": role_model,
+            "system_instructions": system_instructions,
             "workspace_files": workspace_files_summary,
             "workspace_git_status": workspace_git_status,
             "job_history_summary": history_summary,
@@ -150,17 +116,16 @@ def format_llm_prompt(context: Dict[str, Any], format_type: str = "human-readabl
     """
     if format_type == "human-readable":
         prompt = f"""
-You are the {context.get('role_name')}.
 Job ID: {context.get('job_id')}
 Current Phase: {context.get('current_phase')}
-Job Description: {context.get('job_description')}
+Job Description: {context.get('description')}
 
-Instructions for you:
-{context.get('role_instructions')}
+Instructions:
+{context.get('system_instructions', 'No system instructions available.')}
 
 ---
-Additional Context (Placeholder):
-{json.dumps(context.get('workspace_content', {}), indent=2)}
+Additional Context:
+{json.dumps(context.get('workspace_files', {}), indent=2)}
 """
         return prompt.strip()
     elif format_type == "json-files":
@@ -172,7 +137,7 @@ Additional Context (Placeholder):
 
 def enhance_context_with_previous_outcome(context: Dict[str, Any], job_dir: str) -> Dict[str, Any]:
     """
-    Enhances job context with previous outcome information for role-specific guidance.
+    Enhances job context with previous outcome information.
 
     Args:
         context: Job context dictionary
@@ -191,22 +156,10 @@ def enhance_context_with_previous_outcome(context: Dict[str, Any], job_dir: str)
     # Add previous outcome to context
     context["previous_outcome"] = previous_outcome
 
-    # Add role-specific instructions based on previous outcome
-    active_role = context.get("role_name", "").lower()
-
-    if active_role == "worker":
-        context["outcome_instructions"] = (
-            "You have access to the previous step's outcome in previous_outcome. "
-            "Use this to understand what was accomplished in the prior step and "
-            "summarize your work accordingly, noting any struggles or additional "
-            "information that helped you succeed."
-        )
-    elif active_role == "supervisor":
-        context["outcome_instructions"] = (
-            "You have access to the previous step's outcome in previous_outcome. "
-            "Review this to understand what the worker accomplished, assess it "
-            "against the overall objectives, and provide guidance regarding any "
-            "concerns, criticisms, additional research needed, or approval to proceed."
-        )
+    # Add general instructions for using previous outcome
+    context["outcome_instructions"] = (
+        "You have access to the previous step's outcome in previous_outcome. "
+        "Use this information to understand what was accomplished and build upon it."
+    )
 
     return context

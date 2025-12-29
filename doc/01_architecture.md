@@ -9,7 +9,7 @@ Logist is the primary orchestration tool that manages the execution of isolated,
 A **Job** represents a single, self-contained unit of work that requires persistent execution across multiple agent interactions. Each job is completely isolated - the Logist clones the current Git state before beginning work, creating a baseline hash that ensures safety and allows complete rollback if needed.
 
 ### Agent Run (Execution Step)
-An **Agent Run** is a single execution of an AI coding agent (e.g., Cline, Aider, or Claude Code) by a specialized role (Worker or Supervisor). Each run either advances the job state or signals that human intervention (via The Steward) is required.
+An **Agent Run** is a single execution of an AI coding agent (e.g., Cline, Aider, or Claude Code). Each run either advances the job state or signals that human intervention (via The Steward) is required.
 
 ### Jobs Index (`jobs_index.json`)
 The **Jobs Index** is the central registry for all jobs managed by Logist. Located in the user's configurable jobs directory (specified with `--jobs-dir`, defaulting to `~/.logist/jobs`), this file maintains two key pieces of information:
@@ -134,11 +134,7 @@ Manages job lifecycle and metadata operations:
 - Workspace setup and isolation
 - Job history and manifest management
 
-##### RoleManagerService (`services/role_manager.py`)
-Handles agent role configuration and loading:
-- Role discovery from configuration files
-- Role inspection and content retrieval
-- Role validation and metadata management
+
 
 ### Architectural Benefits
 

@@ -7,6 +7,5 @@ and execution orchestration.
 """
 
 from .job_manager import JobManagerService
-from .role_manager import RoleManagerService
 
-__all__ = ['JobManagerService', 'RoleManagerService']
+__all__ = ['JobManagerService']

@@ -15,8 +15,8 @@ import click
 
 from logist import workspace_utils  # Import the new module
 from logist.core_engine import LogistEngine
-from logist.services import JobManagerService, RoleManagerService
-from logist.job_state import JobStateError, load_job_manifest, get_current_state_and_role, update_job_manifest, transition_state, JobStates
+from logist.services import JobManagerService
+from logist.job_state import JobStateError, load_job_manifest, get_current_state, update_job_manifest, transition_state, JobStates
 from logist.job_processor import (
     execute_llm_with_cline, handle_execution_error, validate_evidence_files, JobProcessorError,
     save_latest_outcome, prepare_outcome_for_attachments, enhance_context_with_previous_outcome
@@ -28,7 +28,6 @@ from logist.runners.direct import DirectRunner
 
 # Create aliases for backward compatibility with tests
 JobManager = JobManagerService
-RoleManager = RoleManagerService
 
 
 
@@ -38,7 +37,6 @@ RoleManager = RoleManagerService
 # Global instances for CLI
 engine = LogistEngine(runner=DirectRunner())
 manager = JobManagerService()
-role_manager = RoleManagerService()
 
 
 def init_command(jobs_dir: str) -> bool:
@@ -196,11 +194,6 @@ def job():
 @main.group()
 def workspace():
     """Manage job workspaces and their lifecycle."""
-
-
-@main.group()
-def role():
-    """Manage agent roles and their configurations."""
 
 
 @job.command(name="create")
@@ -1529,25 +1522,6 @@ def merge_preview(ctx, job_id: str | None, output: str, format: str, since: str)
         click.secho(f"❌ Error generating merge preview: {e}", fg="red")
 
 
-@role.command(name="list")
-@click.pass_context
-def list_roles(ctx):
-    """List all available agent roles."""
-    jobs_dir = ctx.obj["JOBS_DIR"]
-    click.echo("👥 Executing 'logist role list'")
-    roles = role_manager.list_roles(jobs_dir)
-
-    if not roles:
-        click.echo("📭 No agent roles found.")
-        return
-
-    click.echo("\n📋 Available Agent Roles:")
-    click.echo("-" * 40)
-    for role_item in roles:
-        click.echo(f"- {role_item['name']}: {role_item['description']}")
-    click.echo("-" * 40)
-
-
 @workspace.command(name="cleanup")
 @click.option(
     "--dry-run",
@@ -1689,38 +1663,7 @@ def workspace_cleanup(ctx, dry_run: bool, force: bool, job_id: str, max_backups:
         click.secho(f"❌ Error during workspace cleanup: {e}", fg="red")
 
 
-@role.command(name="list")
-@click.pass_context
-def list_roles(ctx):
-    """List all available agent roles."""
-    jobs_dir = ctx.obj["JOBS_DIR"]
-    click.echo("👥 Executing 'logist role list'")
-    roles = role_manager.list_roles(jobs_dir)
 
-    if not roles:
-        click.echo("📭 No agent roles found.")
-        return
-
-    click.echo("\n📋 Available Agent Roles:")
-    click.echo("-" * 40)
-    for role_item in roles:
-        click.echo(f"- {role_item['name']}: {role_item['description']}")
-    click.echo("-" * 40)
-
-
-@role.command(name="inspect")
-@click.argument("role_name")
-@click.pass_context
-def inspect_role(ctx, role_name: str):
-    """Display the detailed configuration for a specific role."""
-    jobs_dir = ctx.obj["JOBS_DIR"]
-    click.echo(f"👤 Executing 'logist role inspect {role_name}'")
-    try:
-        role_data = role_manager.inspect_role(role_name, jobs_dir)
-        click.echo(role_data)
-    except Exception as e:
-        click.secho(f"❌ Role '{role_name}' not found.", fg="red")
-        ctx.exit(1)
 
 
 @main.command()
@@ -1781,11 +1724,10 @@ def preview_job(ctx, job_id: str | None, detailed: bool):
         # Setup workspace for preview
         manager.setup_workspace(job_dir)
 
-        # Determine current phase and role
+        # Determine current phase
         try:
-            current_phase_name, active_role = get_current_state_and_role(manifest)
+            current_phase_name = get_current_state(manifest)
             click.echo(f"   📍 Current Phase: {current_phase_name}")
-            click.echo(f"   👤 Active Role: {active_role}")
             click.echo(f"   📊 Status: {current_status}")
         except JobStateError as e:
             if "current_phase" in str(e):
