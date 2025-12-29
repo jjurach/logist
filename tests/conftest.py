@@ -3,6 +3,9 @@ Pytest configuration and fixtures for Logist testing.
 
 This module provides shared fixtures and configuration for all tests,
 particularly focusing on the new Agent/Runtime architecture.
+
+IMPORTANT: This module includes safety fixtures that prevent tests from
+modifying the actual git repository (creating branches, checking out, etc.).
 """
 
 import os
@@ -10,9 +13,23 @@ import tempfile
 import pytest
 import shutil
 from pathlib import Path
+from unittest.mock import patch
 
 from src.logist.agents.mock import MockAgent
 from src.logist.runners.mock import MockRunner
+
+
+@pytest.fixture(autouse=True)
+def prevent_git_operations_on_real_repo():
+    """
+    Autouse fixture that prevents tests from performing git operations
+    on the actual logist repository.
+
+    This patches find_git_root() to return None, which causes workspace
+    operations to fail safely rather than creating branches in the real repo.
+    """
+    with patch('logist.workspace_utils.find_git_root', return_value=None):
+        yield
 
 # Import new mock agent framework
 from tests.test_utils.mock_agent_utils import (
