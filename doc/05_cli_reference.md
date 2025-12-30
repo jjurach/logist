@@ -14,7 +14,7 @@ Specifies the root directory where the `jobs_index.json` file and all individual
 -   **Development**: For development, you can use a local directory, e.g., `logist --jobs-dir ./jobs job list`.
 
 ### `--enhance`
-Controls the level of context provided to language models during job execution. When this flag is present, all available context information is included (job manifest, history, workspace details, role instructions, metrics). When absent, only minimal context with file references and attachments is provided.
+Controls the level of context provided to language models during job execution. When this flag is present, all available context information is included (job manifest, history, workspace details, metrics). When absent, only minimal context with file references and attachments is provided.
 
 -   **Type**: Boolean flag (present/absent)
 -   **Default**: Absent (minimal context)
@@ -62,11 +62,10 @@ Displays the installed version of Logist.
 Shows a help message for the main `logist` command, listing all available command groups.
 
 ### `logist init`
-Initializes the jobs directory with default configurations and role files. This sets up the jobs system for the first time.
+Initializes the jobs directory with default configurations. This sets up the jobs system for the first time.
 
 -   Creates the jobs directory structure if it doesn't exist
 -   Creates `jobs_index.json` to track active jobs
--   Copies both `.json` and `.md` role configuration files (worker.json, worker.md, supervisor.json, supervisor.md, system.md) from package defaults
 -   **Warning**: Will warn before reinitializing an already initialized directory
 -   **Example**:
     ```bash
@@ -118,7 +117,8 @@ Configures a DRAFT job with properties before activation, or manages job status 
     -   `--status STATUS`: Set the job status to a new value (cannot be used with other config options)
     -   `--rank NUMBER`: Set the execution queue position (0=front, -1=end; cannot be used with other config options)
 -   **Requirement**: At least one option must be provided
--   **Status Values**: DRAFT, PENDING, RUNNING, REVIEW_REQUIRED, REVIEWING, APPROVAL_REQUIRED, INTERVENTION_REQUIRED, SUCCESS, CANCELED
+-   **Resting State Values**: DRAFT, PENDING, SUCCESS, CANCELED, SUSPENDED, APPROVAL_REQUIRED, INTERVENTION_REQUIRED
+-   **Transient State Values** (during execution): PROVISIONING, EXECUTING, RECOVERING, HARVESTING
 -   **State Restriction**: Job must be in appropriate state depending on operation:
     -   Configuration options (--objective, --details, etc.): Job must be in DRAFT state
     -   Status updates (--status): Can update jobs in any state
@@ -235,25 +235,72 @@ All execution commands create the job workspace directory (if it doesn't exist) 
 
 ---
 
-## Role Management (`logist role`)
-*(New in future implementation)*
+## Human Intervention Commands
 
-This new command group will provide utilities for managing the agent roles available to Logist.
+These commands handle human decision points in the job lifecycle.
 
-### `logist role list`
-Lists all available agent roles found in the global `roles.json` manifest, along with their descriptions.
-
--   **Example**:
-    ```bash
-    logist role list
-    ```
-
-### `logist role inspect <role_name>`
-Displays the full configuration for a specific role, including its name, description, instructions, and designated LLM model.
+### `logist job approve [JOB_ID]`
+Approves a job that is in APPROVAL_REQUIRED state, transitioning it to SUCCESS.
 
 -   **Arguments**:
-    -   `role_name` (required): The name of the role to inspect.
+    -   `[JOB_ID]` (optional): The identifier of the job. Defaults to currently selected job.
+-   **State Restriction**: Job must be in APPROVAL_REQUIRED state
 -   **Example**:
     ```bash
-    logist role inspect Worker
+    logist job approve my-job
+    ```
+
+### `logist job reject [JOB_ID]`
+Rejects a job that is in APPROVAL_REQUIRED state, transitioning it back to PENDING for another iteration.
+
+-   **Arguments**:
+    -   `[JOB_ID]` (optional): The identifier of the job. Defaults to currently selected job.
+-   **State Restriction**: Job must be in APPROVAL_REQUIRED state
+-   **Example**:
+    ```bash
+    logist job reject my-job
+    ```
+
+### `logist job resubmit [JOB_ID]`
+Resubmits a job that is in INTERVENTION_REQUIRED state after human fixes have been made, transitioning it back to PENDING.
+
+-   **Arguments**:
+    -   `[JOB_ID]` (optional): The identifier of the job. Defaults to currently selected job.
+-   **State Restriction**: Job must be in INTERVENTION_REQUIRED state
+-   **Example**:
+    ```bash
+    logist job resubmit my-job
+    ```
+
+### `logist job suspend [JOB_ID]`
+Suspends a job, transitioning it to SUSPENDED state. The job will be skipped by the scheduler.
+
+-   **Arguments**:
+    -   `[JOB_ID]` (optional): The identifier of the job. Defaults to currently selected job.
+-   **State Restriction**: Job must not be in a terminal state (SUCCESS, CANCELED)
+-   **Example**:
+    ```bash
+    logist job suspend my-job
+    ```
+
+### `logist job resume [JOB_ID]`
+Resumes a suspended job, transitioning it back to PENDING state.
+
+-   **Arguments**:
+    -   `[JOB_ID]` (optional): The identifier of the job. Defaults to currently selected job.
+-   **State Restriction**: Job must be in SUSPENDED state
+-   **Example**:
+    ```bash
+    logist job resume my-job
+    ```
+
+### `logist job cancel [JOB_ID]`
+Cancels a job, transitioning it to CANCELED (terminal) state.
+
+-   **Arguments**:
+    -   `[JOB_ID]` (optional): The identifier of the job. Defaults to currently selected job.
+-   **State Restriction**: Job must not already be in a terminal state
+-   **Example**:
+    ```bash
+    logist job cancel my-job
     ```

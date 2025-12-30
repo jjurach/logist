@@ -1,143 +1,242 @@
-# 🚦 Logist State Machine Semantics
+# Logist State Machine Semantics
 
-This document defines the deterministic state machine used by the Logist workflow engine to manage the lifecycle of individual tasks (agent interactions) within a **Directed Acyclic Graph (DAG)** workflow. These state names will be used as constants and enumerated values in the JSON schema for inter-component communication and LLM responses.
-
----
-
-## 1. ⚙️ Core Execution States (Automated Lifecycle)
-
-These states describe the normal, automated execution path of a task.
-
-* **DRAFT**
-    * **Description:** The job has been created but is not yet configured for execution. Users can set objectives, details, acceptance criteria, and other properties before activation.
-    * **Transition From:** *Initial State*, Creation.
-    * **Next Automated States:** PENDING (via activation).
-
-* **PENDING**
-    * **Description:** The task is ready to run but is waiting for the scheduler or for its dependencies to complete.
-    * **Transition From:** DRAFT (activated), SUSPENDED (resumed), DEPENDENCIES\_MET, RESUBMIT.
-    * **Next Automated States:** RUNNING, CANCELED.
-
-* **SUSPENDED**
-    * **Description:** The task is intentionally paused by the scheduler or an external command (e.g., administrative intervention, resource constraints).
-    * **Transition From:** Any active state (DRAFT, PENDING, RUNNING, etc.) via suspend command.
-    * **Next Automated States:** PENDING (via resume command), CANCELED (via administrative action).
-    * **Purpose:** Allows temporary exclusion from execution while preserving state for resumption.
-
-* **RUNNING**
-    * **Description:** An agent is actively executing.
-    * **Transition From:** PENDING, PAUSED.
-    * **Next Automated States:** REVIEW_REQUIRED (always - command-driven flow).
-
-* **PAUSED**
-    * **Description:** The task is intentionally suspended by the scheduler or an external command (e.g., rate limiting).
-    * **Transition From:** RUNNING.
-    * **Next Automated States:** RUNNING, CANCELED.
-
-* **SUCCESS**
-    * **Description:** The task completed execution and returned a valid, expected result.
-    * **Transition From:** RUNNING, FORCE\_SUCCESS.
-    * **Next State:** *End State*, Next Task PENDING.
-
-* **FAILED** (Deprecated)
-    * **Note:** In the command-driven model, RUNNING always transitions to REVIEW_REQUIRED. The FAILED state is no longer part of the primary workflow.
-
-* **CANCELED**
-    * **Description:** The task was terminated by an external command before completion.
-    * **Transition From:** PENDING, RUNNING, PAUSED.
-    * **Next State:** *End State*.
+This document defines the deterministic state machine used by the Logist workflow engine to manage job lifecycle. State names are used as constants in the JSON schema for inter-component communication.
 
 ---
 
-## 2. ✋ Command-Driven Intervention States (Actionable)
+## 1. Core Concept: The Step
 
-These states define **what command runs next** when `logist job step` is executed, rather than representing assessments of current status.
+A **step** is the atomic unit of execution in Logist. One step:
+1. Takes a job from PENDING
+2. Executes through PROVISIONING → EXECUTING → HARVESTING
+3. Lands the job in a **resting state** (SUCCESS, INTERVENTION_REQUIRED, APPROVAL_REQUIRED, etc.)
 
-* **REVIEW\_REQUIRED**
-    * **Description:** Review process is required to assess completed work.
-    * **Semantic Role:** **Automated Quality Check:** System evaluates output and determines quality/recommendations.
-    * **Next State:** REVIEWING.
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              ONE STEP                                        │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  PENDING ──▶ PROVISIONING ──▶ EXECUTING ──▶ HARVESTING ──▶ [resting state]  │
+│                                    │                                         │
+│                               (timeout)                                      │
+│                                    ▼                                         │
+│                               RECOVERING ──▶ EXECUTING (with updated inputs) │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
 
-* **REVIEWING**
-    * **Description:** Review process is actively executing to assess results.
-    * **Semantic Role:** **Active Assessment Execution:** Analogous to RUNNING but specifically for review operations.
-    * **Next State:** APPROVAL_REQUIRED or INTERVENTION_REQUIRED.
+### Step Execution Model
 
-* **INTERVENTION\_REQUIRED**
-    * **Description:** Requires Steward (human) intervention for fixes, adjustments, or other changes before continuing workflow.
-    * **Semantic Role:** **Human Problem-Solving:** Allows Steward to fix issues, provide guidance, or make workflow adjustments.
-    * **Next States:** PENDING, REVIEW_REQUIRED, or CANCELED.
+- `logist job step` - Executes one step on a PENDING job (explicit or next in queue)
+- `logist job step JOB_ID` - Executes one step on a specific PENDING job
+- `logist job run` - Cycles through PENDING jobs, executing steps until no PENDING jobs remain
 
-* **APPROVAL\_REQUIRED**
-    * **Description:** Requires final Steward approval/rejection before the job can be marked SUCCESS and allow dependent jobs to proceed.
-    * **Semantic Role:** **Final Human Gate:** Either auto-approve (if configured) or require explicit human sign-off.
-    * **Next States:** SUCCESS or PENDING (if rejected).
-
----
-
-## 3. 🔄 Error Handling and Agent Handoffs
-
-Logist implements a structured error handling flow that cleanly separates concerns between agents while maintaining clear escalation paths.
-
-### Agent Responsibility Model (Deprecated)
-**Note:** The old agent-centric state ownership is deprecated in favor of the command-driven model above. States now define what command to run next, not which agent owns the state.
-
-### Command-Driven Flow
-1. **Job Creation**: Create job → `DRAFT` (initial state for configuration)
-2. **Job Configuration**: `DRAFT` + `logist job config` commands → `DRAFT` (modified)
-3. **Job Activation**: `DRAFT` + `logist job activate` → `PENDING` (added to execution queue)
-4. **Agent Execution**: `PENDING` → `RUNNING` → `REVIEW_REQUIRED`
-5. **Review Process**: `REVIEW_REQUIRED` → `REVIEWING` → `APPROVAL_REQUIRED` or `INTERVENTION_REQUIRED`
-6. **Human Decisions**: Final gates where humans make approval/rejection/termination decisions
-
-### System Health Monitoring
-- **Automatic Recovery**: Stuck agents (marked RUNNING/REVIEWING but no active execution) auto-reset to safe pending states
-- **Worker Recovery**: `RUNNING` (stuck) → `PENDING` (retry Worker)
-- **Supervisor Recovery**: `REVIEWING` (stuck) → `REVIEW_REQUIRED` (retry Supervisor)
-- **Timeout Detection**: No evidence of response/output after threshold triggers recovery
-
-This design ensures resilience and prevents permanently blocked jobs while maintaining clear escalation paths.
-
-## 4. ➡️ Continuation Commands (The Semantics of Resumption)
-
-These are the commands that an external party (human or repair agent) issues to Logist to transition a task out of an Intervention State.
-
-* **RESUBMIT** (human command)
-    * **Transition From State(s):** INTERVENTION_REQUIRED (after human fixes).
-    * **Action Semantics:** **Resumes:** After Steward intervention, restarts the workflow from PENDING.
-    * **Next State:** PENDING.
-
-* **APPROVE** (human command)
-    * **Transition From State(s):** APPROVAL_REQUIRED.
-    * **Action Semantics:** **Approves:** Marks job as complete, allows dependent jobs to proceed.
-    * **Next State:** SUCCESS.
-
-* **REJECT** (human command)
-    * **Transition From State(s):** APPROVAL_REQUIRED.
-    * **Action Semantics:** **Rejects:** Sends job back for more work (typically to Worker phase).
-    * **Next State:** PENDING.
-
-* **TERMINATE** (human command)
-    * **Transition From State(s):** INTERVENTION_REQUIRED.
-    * **Action Semantics:** **Aborts:** Steward determines workflow should end.
-    * **Next State:** CANCELED.
+After a step completes, the **next step may be for a different job** in the queue.
 
 ---
 
-## 5. 💾 State Persistence
+## 2. State Categories
 
-The current state of a job is persisted to the filesystem to ensure that workflows can be resumed.
+### Resting States (Job waits here)
 
--   **Location**: The state is stored within the **`job_manifest.json`** file, which resides inside each job's specific directory.
--   **Mechanism**: A dedicated `"status"` field in the JSON manifest holds the current state value (e.g., `"PENDING"`, `"RUNNING"`, `"SUSPENDED"`). The Logist engine reads this field at the start of any operation and updates it upon every state transition.
+These are states where a job remains until an external action occurs.
 
-### Example `job_manifest.json`
+| State | Description | Human Action Required? |
+|-------|-------------|------------------------|
+| **DRAFT** | Being configured | No (user is configuring) |
+| **PENDING** | Ready for next step | No (scheduler picks it up) |
+| **SUCCESS** | Complete | No (terminal) |
+| **APPROVAL_REQUIRED** | Needs sign-off | **Yes** - approve or reject |
+| **INTERVENTION_REQUIRED** | Needs fix | **Yes** - fix and resubmit |
+| **SUSPENDED** | Paused | **Yes** - resume |
+| **CANCELED** | Terminated | No (terminal) |
+
+### Transient States (Job passes through during step execution)
+
+These states occur during step execution and transition automatically.
+
+| State | Description | Duration | Runner Method |
+|-------|-------------|----------|---------------|
+| **PROVISIONING** | Setting up workspace | Seconds to minutes | `provision()` |
+| **EXECUTING** | Agent running | Minutes to hours | `spawn()`, `is_alive()`, `get_logs()` |
+| **RECOVERING** | Restarting stuck agent | Seconds | `recover()` |
+| **HARVESTING** | Collecting results | Seconds | `harvest()` |
+
+**Note:** RECOVERING quickly returns to EXECUTING with updated inputs. HARVESTING quickly transitions to a resting state based on the agent's exit signal.
+
+---
+
+## 3. State Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        Job Lifecycle State Machine                           │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ┌─────────┐     activate      ┌──────────┐                                 │
+│  │  DRAFT  │──────────────────▶│  PENDING │◀─────────────────────┐          │
+│  └─────────┘                   └────┬─────┘                      │          │
+│                                     │                            │          │
+│                              `logist job step`                   │          │
+│                                     │                            │          │
+│                                     ▼                            │          │
+│                            ┌──────────────┐                      │          │
+│                            │ PROVISIONING │ (transient)          │          │
+│                            └───────┬──────┘                      │          │
+│                                    │                             │          │
+│                                    ▼                             │          │
+│  ┌────────────┐             ┌───────────┐                        │          │
+│  │ RECOVERING │◀──timeout───│ EXECUTING │                        │          │
+│  │(transient) │             └─────┬─────┘                        │          │
+│  └─────┬──────┘                   │                              │          │
+│        │                          │                              │          │
+│        │ recovered           agent signals                       │          │
+│        │ (updated inputs)    completion                          │          │
+│        │        │                 │                              │          │
+│        │        ▼                 ▼                              │          │
+│        │   ┌───────────┐   ┌─────────────┐                       │          │
+│        └──▶│ EXECUTING │   │  HARVESTING │ (transient)           │          │
+│            └───────────┘   └──────┬──────┘                       │          │
+│                                   │                              │          │
+│                     agent exit signal determines state           │          │
+│                                   │                              │          │
+│              ┌────────────────────┼────────────────────┐         │          │
+│              │                    │                    │         │          │
+│              ▼                    ▼                    ▼         │          │
+│     ┌─────────────┐    ┌──────────────────┐    ┌────────────┐    │          │
+│     │   SUCCESS   │    │   INTERVENTION   │    │  APPROVAL  │    │          │
+│     │ (terminal)  │    │    REQUIRED      │    │  REQUIRED  │    │          │
+│     └─────────────┘    └────────┬─────────┘    └──────┬─────┘    │          │
+│                                 │                     │          │          │
+│                                 │ human               │ approve  │          │
+│                                 │ resubmits           │          │          │
+│                                 │                     ▼          │          │
+│                                 │              ┌───────────┐     │          │
+│                                 │              │  SUCCESS  │     │          │
+│                                 │              └───────────┘     │          │
+│                                 │                                │          │
+│                                 │                     reject     │          │
+│                                 └────────────────────────────────┘          │
+│                                                                              │
+│  Any State ──suspend──▶ SUSPENDED ──resume──▶ PENDING                       │
+│  Any State ──cancel───▶ CANCELED                                            │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 4. State Definitions
+
+### DRAFT
+- **Description:** The job has been created but is not yet configured for execution. Users can set objectives, details, acceptance criteria, and other properties before activation.
+- **Transition From:** Initial State (job creation)
+- **Transitions To:** PENDING (via `activate`), SUSPENDED (via `suspend`), CANCELED (via `cancel`)
+
+### PENDING
+- **Description:** The job is ready for execution and waiting to be picked up by `logist job step` or scheduler.
+- **Transition From:** DRAFT (activated), SUSPENDED (resumed), INTERVENTION_REQUIRED (resubmitted), APPROVAL_REQUIRED (rejected)
+- **Transitions To:** PROVISIONING (step begins), SUSPENDED, CANCELED
+
+### PROVISIONING (Transient)
+- **Description:** Runner is setting up the workspace - cloning git repository, creating job branch, copying attachments.
+- **Runner Method:** `provision()`
+- **Transition From:** PENDING
+- **Transitions To:** EXECUTING (success), INTERVENTION_REQUIRED (failure), CANCELED
+
+### EXECUTING (Transient)
+- **Description:** Agent is actively running the task.
+- **Runner Methods:** `spawn()`, `is_alive()`, `get_logs()`, `wait()`
+- **Transition From:** PROVISIONING, RECOVERING
+- **Transitions To:** HARVESTING (agent signals completion), RECOVERING (timeout/stuck), CANCELED
+
+### RECOVERING (Transient)
+- **Description:** Runner is attempting to restart a stuck execution.
+- **Runner Method:** `recover()`
+- **Transition From:** EXECUTING (timeout detected)
+- **Transitions To:** EXECUTING (recovery succeeds, with updated inputs)
+- **Note:** If recovery fails, the job transitions to INTERVENTION_REQUIRED via HARVESTING.
+
+### HARVESTING (Transient)
+- **Description:** Runner is collecting outputs, committing changes to the job branch, and determining the final state based on the agent's exit signal.
+- **Runner Method:** `harvest()`
+- **Transition From:** EXECUTING
+- **Transitions To:** SUCCESS, APPROVAL_REQUIRED, or INTERVENTION_REQUIRED (based on agent exit signal)
+
+### INTERVENTION_REQUIRED
+- **Description:** Requires human intervention before the job can continue. The job stays in this state **indefinitely** until a human acts.
+- **Transition From:** PROVISIONING (failure), HARVESTING (agent signaled stuck/error)
+- **Transitions To:** PENDING (via `resubmit`), CANCELED (via `cancel`)
+- **Human Action:** Fix issues, then run `logist job resubmit`
+
+### APPROVAL_REQUIRED
+- **Description:** Work is complete but requires human approval before marking as SUCCESS.
+- **Transition From:** HARVESTING (agent signaled needs approval)
+- **Transitions To:** SUCCESS (via `approve`), PENDING (via `reject`), CANCELED (via `cancel`)
+- **Human Action:** Review work, then run `logist job approve` or `logist job reject`
+
+### SUSPENDED
+- **Description:** Job is intentionally paused.
+- **Transition From:** Any non-terminal state via `suspend`
+- **Transitions To:** PENDING (via `resume`), CANCELED (via `cancel`)
+
+### SUCCESS (Terminal)
+- **Description:** The job completed successfully.
+- **Transition From:** HARVESTING (goal achieved), APPROVAL_REQUIRED (approved)
+- **Transitions To:** None (terminal state)
+
+### CANCELED (Terminal)
+- **Description:** The job was terminated by user action.
+- **Transition From:** Any non-terminal state via `cancel`
+- **Transitions To:** None (terminal state)
+
+---
+
+## 5. State Transition Matrix
+
+| From State | To States | Trigger |
+|------------|-----------|---------|
+| DRAFT | PENDING, SUSPENDED, CANCELED | `activate`, `suspend`, `cancel` |
+| PENDING | PROVISIONING, SUSPENDED, CANCELED | `step`, `suspend`, `cancel` |
+| PROVISIONING | EXECUTING, INTERVENTION_REQUIRED, CANCELED | Success, Failure, `cancel` |
+| EXECUTING | HARVESTING, RECOVERING, CANCELED | Complete, Timeout, `cancel` |
+| RECOVERING | EXECUTING | Recovery succeeds (with updated inputs) |
+| HARVESTING | SUCCESS, APPROVAL_REQUIRED, INTERVENTION_REQUIRED | Based on agent exit signal |
+| INTERVENTION_REQUIRED | PENDING, CANCELED | `resubmit`, `cancel` |
+| APPROVAL_REQUIRED | SUCCESS, PENDING, CANCELED | `approve`, `reject`, `cancel` |
+| SUSPENDED | PENDING, CANCELED | `resume`, `cancel` |
+| SUCCESS | *Terminal State* | - |
+| CANCELED | *Terminal State* | - |
+
+---
+
+## 6. CLI Commands and State Transitions
+
+| CLI Command | Precondition | Effect |
+|-------------|--------------|--------|
+| `logist job create` | - | Creates job in DRAFT |
+| `logist job activate` | DRAFT | → PENDING |
+| `logist job step` | PENDING | Executes step → resting state |
+| `logist job step JOB_ID` | Job in PENDING | Executes step on specific job |
+| `logist job run` | PENDING jobs exist | Cycles steps until no PENDING jobs |
+| `logist job approve` | APPROVAL_REQUIRED | → SUCCESS |
+| `logist job reject` | APPROVAL_REQUIRED | → PENDING |
+| `logist job resubmit` | INTERVENTION_REQUIRED | → PENDING |
+| `logist job cancel` | Any non-terminal | → CANCELED |
+| `logist job suspend` | Any non-terminal | → SUSPENDED |
+| `logist job resume` | SUSPENDED | → PENDING |
+
+---
+
+## 7. State Persistence
+
+The current state of a job is persisted in the `job_manifest.json` file within each job's directory.
 
 ```json
 {
   "job_id": "sample-implementation",
   "description": "Sample job demonstrating logist workflow...",
-  "status": "SUSPENDED",
+  "status": "PENDING",
   "current_phase": "implementation",
   "metrics": {
     "cumulative_cost": 22,
@@ -145,14 +244,9 @@ The current state of a job is persisted to the filesystem to ensure that workflo
   },
   "history": [
     {
-      "phase": "requirements_analysis",
-      "status": "SUCCESS",
-      "summary": "Completed analysis of email validation rules."
-    },
-    {
       "phase": "implementation",
-      "status": "SUSPENDED",
-      "summary": "Job suspended for external review before continuing."
+      "status": "PENDING",
+      "summary": "Job activated and ready for execution."
     }
   ]
 }
@@ -160,18 +254,21 @@ The current state of a job is persisted to the filesystem to ensure that workflo
 
 ---
 
-## 6. 🔄 State Transition Matrix
+## 8. Deprecated States
 
-| From State | To States | Trigger/Command |
-|------------|-----------|-----------------|
-| DRAFT | PENDING, SUSPENDED, CANCELED | `logist job activate`, `logist job suspend`, `logist job cancel` |
-| PENDING | RUNNING, SUSPENDED, CANCELED | Scheduler trigger, `logist job suspend`, `logist job cancel` |
-| SUSPENDED | PENDING, CANCELED | `logist job resume`, `logist job cancel` |
-| RUNNING | REVIEW_REQUIRED, SUSPENDED, CANCELED | Agent completion, `logist job suspend`, `logist job cancel` |
-| REVIEW_REQUIRED | REVIEWING, SUSPENDED, CANCELED | `logist job step`, `logist job suspend`, `logist job cancel` |
-| REVIEWING | APPROVAL_REQUIRED, INTERVENTION_REQUIRED, SUSPENDED, CANCELED | Review completion, `logist job suspend`, `logist job cancel` |
-| APPROVAL_REQUIRED | SUCCESS, PENDING, SUSPENDED, CANCELED | `logist job approve`, `logist job reject`, `logist job suspend`, `logist job cancel` |
-| INTERVENTION_REQUIRED | PENDING, REVIEW_REQUIRED, SUSPENDED, CANCELED | Human intervention, `logist job suspend`, `logist job cancel` |
-| SUCCESS | *Terminal State* | Job completed successfully |
-| CANCELED | *Terminal State* | Job terminated by user |
-| FAILED | *Terminal State* | Job failed (deprecated but kept for compatibility) |
+The following states are deprecated and should not be used in new code:
+
+| State | Replacement | Notes |
+|-------|-------------|-------|
+| RUNNING | PROVISIONING, EXECUTING, HARVESTING | Split into runner lifecycle phases |
+| PAUSED | SUSPENDED | Consolidated pause semantics |
+| REVIEW_REQUIRED | Removed | No separate review phase; agents self-evaluate |
+| REVIEWING | Removed | No separate review phase; agents self-evaluate |
+| FAILED | INTERVENTION_REQUIRED or CANCELED | Use appropriate error state |
+
+For backward compatibility, existing job manifests with deprecated states should be migrated:
+- RUNNING → INTERVENTION_REQUIRED (stuck) or re-execute
+- REVIEW_REQUIRED → INTERVENTION_REQUIRED
+- REVIEWING → INTERVENTION_REQUIRED
+- PAUSED → SUSPENDED
+- FAILED → CANCELED

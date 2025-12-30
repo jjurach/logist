@@ -76,25 +76,38 @@ Job workspaces are created **lazily** during execution commands to avoid unneces
 6. The workspace is now ready for Cline CLI execution
 7. Workspaces are automatically cleaned up based on policies (successful jobs after 1 day, failed after 7 days, etc.), removing both `workspace/` and `target.git/`
 
-### Iterative Loop Structure
-The Logist enforces a strict three-phase execution loop:
+### Step-Based Execution Model
 
-1. **Worker Run (Action)**: Agent executes actual work, generating outputs and evidence files
-2. **Supervisor Run (Evaluation)**: Agent reviews work quality, identifies issues, provides guidance
-3. **Steward Checkpoint (Human Gate)**: Human reviews progress and decides next action
+A **step** is the atomic unit of execution in Logist. Each step:
+1. Takes a job from PENDING state
+2. Executes through runner lifecycle phases (provision → execute → harvest)
+3. Lands the job in a resting state
 
-This cycle repeats until the job reaches COMPLETED status or encounters an unrecoverable error.
+The step transitions through these states:
+```
+PENDING → PROVISIONING → EXECUTING → HARVESTING → [resting state]
+```
+
+Where the resting state is one of:
+- **SUCCESS**: Goal achieved
+- **APPROVAL_REQUIRED**: Needs human sign-off
+- **INTERVENTION_REQUIRED**: Needs human fix
 
 ### Flow Control Logic
-- **COMPLETED**: Worker signals job success - Logist advances to final Steward review
-- **STUCK**: Worker needs clarification - pauses for Steward intervention
-- **RETRY**: Supervisor recommends restarting current phase - Logist re-runs without human intervention
+- **Goal Achieved**: Agent signals success during harvest → job transitions to SUCCESS or APPROVAL_REQUIRED
+- **Stuck/Error**: Agent signals stuck or error occurs → job transitions to INTERVENTION_REQUIRED
+- **Timeout**: Execution times out → runner attempts recovery (RECOVERING state)
+
+Human intervention states (INTERVENTION_REQUIRED, APPROVAL_REQUIRED) require explicit human action:
+- `logist job resubmit` moves INTERVENTION_REQUIRED → PENDING
+- `logist job approve` moves APPROVAL_REQUIRED → SUCCESS
+- `logist job reject` moves APPROVAL_REQUIRED → PENDING
 
 ### Non-Destructive Previews (Dry Runs)
 To aid in debugging, cost control, and build confidence in agent actions, Logist provides non-destructive preview and dry-run capabilities. These features allow users to inspect the agent's planned actions and generated prompts without incurring actual costs or modifying the project state.
 
 -   **Prompt Preview**: Allows viewing the exact prompt intended for the next agent run without executing it.
--   **Dry Run Simulation**: Simulates an entire Worker -> Supervisor execution cycle using mock data, demonstrating the logical flow and data transformations without actual LLM calls or state changes.
+-   **Dry Run Simulation**: Simulates an entire step execution cycle using mock data, demonstrating the logical flow and data transformations without actual LLM calls or state changes.
 
 ## Modular Architecture (v2.0)
 

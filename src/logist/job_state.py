@@ -8,33 +8,57 @@ class JobStateError(Exception):
 
 # Job state constants
 class JobStates:
-    """Constants for job lifecycle states."""
+    """Constants for job lifecycle states.
 
-    # Initial state - job is configured but not yet activated for execution
+    States are divided into two categories:
+
+    **Resting States** (job waits here until external action):
+    - DRAFT: Being configured
+    - PENDING: Ready for next step
+    - SUCCESS: Complete (terminal)
+    - CANCELED: Terminated (terminal)
+    - SUSPENDED: Paused
+    - APPROVAL_REQUIRED: Needs human sign-off
+    - INTERVENTION_REQUIRED: Needs human fix
+
+    **Transient States** (job passes through during step execution):
+    - PROVISIONING: Setting up workspace
+    - EXECUTING: Agent running
+    - RECOVERING: Restarting stuck agent
+    - HARVESTING: Collecting results
+    """
+
+    # Resting states
     DRAFT = "DRAFT"
-
-    # Ready for execution - job is waiting to run
     PENDING = "PENDING"
-
-    # Temporarily suspended - job should be skipped by scheduler
     SUSPENDED = "SUSPENDED"
-
-    # Core execution states
-    RUNNING = "RUNNING"
-    PAUSED = "PAUSED"
     SUCCESS = "SUCCESS"
     CANCELED = "CANCELED"
-    FAILED = "FAILED"  # Deprecated but kept for compatibility
-
-    # Command-driven intervention states
-    REVIEW_REQUIRED = "REVIEW_REQUIRED"
-    REVIEWING = "REVIEWING"
     APPROVAL_REQUIRED = "APPROVAL_REQUIRED"
     INTERVENTION_REQUIRED = "INTERVENTION_REQUIRED"
 
-    # Attach/recover session states
+    # Transient states (during step execution)
+    PROVISIONING = "PROVISIONING"
+    EXECUTING = "EXECUTING"
+    RECOVERING = "RECOVERING"
+    HARVESTING = "HARVESTING"
+
+    # Deprecated states (kept for backward compatibility and migration)
+    RUNNING = "RUNNING"  # Deprecated: use PROVISIONING/EXECUTING/HARVESTING
+    PAUSED = "PAUSED"  # Deprecated: use SUSPENDED
+    FAILED = "FAILED"  # Deprecated: use INTERVENTION_REQUIRED or CANCELED
+    REVIEW_REQUIRED = "REVIEW_REQUIRED"  # Deprecated: removed (agents self-evaluate)
+    REVIEWING = "REVIEWING"  # Deprecated: removed (agents self-evaluate)
+
+    # Attach/recover session states (legacy)
     ATTACHED = "ATTACHED"
     DETACHED = "DETACHED"
+
+    # Lists for validation
+    RESTING_STATES = {DRAFT, PENDING, SUSPENDED, SUCCESS, CANCELED, APPROVAL_REQUIRED, INTERVENTION_REQUIRED}
+    TRANSIENT_STATES = {PROVISIONING, EXECUTING, RECOVERING, HARVESTING}
+    TERMINAL_STATES = {SUCCESS, CANCELED}
+    DEPRECATED_STATES = {RUNNING, PAUSED, FAILED, REVIEW_REQUIRED, REVIEWING}
 
 def load_job_manifest(job_dir: str) -> Dict[str, Any]:
     """
@@ -94,11 +118,27 @@ def get_current_state(manifest: Dict[str, Any]) -> str:
 
 def transition_state(current_status: str, response_action: str) -> str:
     """
-    Determines the next state based on current status and LLM response action.
+    Determines the next state based on current status and action.
 
     Args:
-        current_status: Current job status (e.g., "DRAFT", "PENDING", "RUNNING").
-        response_action: LLM response action ("COMPLETED", "STUCK", "RETRY", "ACTIVATED", "SUSPEND", "RESUME").
+        current_status: Current job status (e.g., "DRAFT", "PENDING", "EXECUTING").
+        response_action: Action triggering the transition:
+            - "ACTIVATED": Activate a DRAFT job
+            - "STEP_START": Begin step execution
+            - "PROVISION_COMPLETE": Provisioning finished
+            - "EXECUTE_COMPLETE": Agent execution finished
+            - "RECOVER_START": Begin recovery attempt
+            - "RECOVER_COMPLETE": Recovery succeeded
+            - "HARVEST_SUCCESS": Harvest determined goal achieved
+            - "HARVEST_APPROVAL": Harvest determined approval needed
+            - "HARVEST_INTERVENTION": Harvest determined intervention needed
+            - "APPROVE": Human approved
+            - "REJECT": Human rejected
+            - "RESUBMIT": Human resubmitted after fix
+            - "SUSPEND": Pause the job
+            - "RESUME": Resume a suspended job
+            - "CANCEL": Cancel the job
+            - Legacy: "COMPLETED", "STUCK", "RETRY"
 
     Returns:
         The next status string.
@@ -107,36 +147,63 @@ def transition_state(current_status: str, response_action: str) -> str:
         JobStateError: If an invalid state transition is attempted.
     """
     # State machine transitions based on 04_state_machine.md
-    # Simplified to remove role-based logic
     transitions = {
-        # DRAFT state transitions (only ACTIVATED is allowed from DRAFT)
+        # DRAFT state transitions
         (JobStates.DRAFT, "ACTIVATED"): JobStates.PENDING,
-
-        # SUSPENDED state transitions - can suspend from most states
         (JobStates.DRAFT, "SUSPEND"): JobStates.SUSPENDED,
+        (JobStates.DRAFT, "CANCEL"): JobStates.CANCELED,
+
+        # PENDING state transitions (step execution begins)
+        (JobStates.PENDING, "STEP_START"): JobStates.PROVISIONING,
         (JobStates.PENDING, "SUSPEND"): JobStates.SUSPENDED,
-        (JobStates.RUNNING, "SUSPEND"): JobStates.SUSPENDED,
-        (JobStates.REVIEW_REQUIRED, "SUSPEND"): JobStates.SUSPENDED,
-        (JobStates.REVIEWING, "SUSPEND"): JobStates.SUSPENDED,
-        (JobStates.APPROVAL_REQUIRED, "SUSPEND"): JobStates.SUSPENDED,
+        (JobStates.PENDING, "CANCEL"): JobStates.CANCELED,
+
+        # PROVISIONING state transitions
+        (JobStates.PROVISIONING, "PROVISION_COMPLETE"): JobStates.EXECUTING,
+        (JobStates.PROVISIONING, "PROVISION_FAILED"): JobStates.INTERVENTION_REQUIRED,
+        (JobStates.PROVISIONING, "CANCEL"): JobStates.CANCELED,
+
+        # EXECUTING state transitions
+        (JobStates.EXECUTING, "EXECUTE_COMPLETE"): JobStates.HARVESTING,
+        (JobStates.EXECUTING, "RECOVER_START"): JobStates.RECOVERING,
+        (JobStates.EXECUTING, "CANCEL"): JobStates.CANCELED,
+
+        # RECOVERING state transitions (always returns to EXECUTING)
+        (JobStates.RECOVERING, "RECOVER_COMPLETE"): JobStates.EXECUTING,
+
+        # HARVESTING state transitions (determines final resting state)
+        (JobStates.HARVESTING, "HARVEST_SUCCESS"): JobStates.SUCCESS,
+        (JobStates.HARVESTING, "HARVEST_APPROVAL"): JobStates.APPROVAL_REQUIRED,
+        (JobStates.HARVESTING, "HARVEST_INTERVENTION"): JobStates.INTERVENTION_REQUIRED,
+        (JobStates.HARVESTING, "CANCEL"): JobStates.CANCELED,
+
+        # Human intervention state transitions
+        (JobStates.INTERVENTION_REQUIRED, "RESUBMIT"): JobStates.PENDING,
         (JobStates.INTERVENTION_REQUIRED, "SUSPEND"): JobStates.SUSPENDED,
+        (JobStates.INTERVENTION_REQUIRED, "CANCEL"): JobStates.CANCELED,
 
-        # Resume transitions - SUSPENDED can resume to various states
-        (JobStates.SUSPENDED, "RESUME"): JobStates.PENDING,  # Default resume target
+        # Approval state transitions
+        (JobStates.APPROVAL_REQUIRED, "APPROVE"): JobStates.SUCCESS,
+        (JobStates.APPROVAL_REQUIRED, "REJECT"): JobStates.PENDING,
+        (JobStates.APPROVAL_REQUIRED, "SUSPEND"): JobStates.SUSPENDED,
+        (JobStates.APPROVAL_REQUIRED, "CANCEL"): JobStates.CANCELED,
 
-        # Execution transitions (simplified without role distinctions)
-        (JobStates.PENDING, "COMPLETED"): JobStates.RUNNING,
-        (JobStates.RUNNING, "COMPLETED"): JobStates.REVIEW_REQUIRED,
+        # SUSPENDED state transitions
+        (JobStates.SUSPENDED, "RESUME"): JobStates.PENDING,
+        (JobStates.SUSPENDED, "CANCEL"): JobStates.CANCELED,
+
+        # Legacy transitions for backward compatibility
+        # Map old RUNNING state to new states
+        (JobStates.RUNNING, "COMPLETED"): JobStates.HARVESTING,
         (JobStates.RUNNING, "STUCK"): JobStates.INTERVENTION_REQUIRED,
-        (JobStates.RUNNING, "RETRY"): JobStates.PENDING,
+        (JobStates.RUNNING, "SUSPEND"): JobStates.SUSPENDED,
+        (JobStates.RUNNING, "CANCEL"): JobStates.CANCELED,
 
+        # Legacy REVIEW_REQUIRED/REVIEWING transitions
         (JobStates.REVIEW_REQUIRED, "COMPLETED"): JobStates.APPROVAL_REQUIRED,
         (JobStates.REVIEW_REQUIRED, "STUCK"): JobStates.INTERVENTION_REQUIRED,
-        (JobStates.REVIEW_REQUIRED, "RETRY"): JobStates.REVIEW_REQUIRED,
-
         (JobStates.REVIEWING, "COMPLETED"): JobStates.APPROVAL_REQUIRED,
         (JobStates.REVIEWING, "STUCK"): JobStates.INTERVENTION_REQUIRED,
-        (JobStates.REVIEWING, "RETRY"): JobStates.REVIEW_REQUIRED,
     }
 
     key = (current_status, response_action)
@@ -145,15 +212,19 @@ def transition_state(current_status: str, response_action: str) -> str:
 
     # Default fallback for unrecognized transitions
     if response_action == "STUCK":
-        return "INTERVENTION_REQUIRED"
-    elif response_action == "RETRY":
-        return current_status  # Stay in current state for retry
+        return JobStates.INTERVENTION_REQUIRED
     elif response_action == "SUSPEND":
-        # Allow suspension from any state not already handled above
-        if current_status not in [JobStates.SUSPENDED, JobStates.SUCCESS, JobStates.CANCELED, JobStates.FAILED]:
+        # Allow suspension from any non-terminal state
+        if current_status not in JobStates.TERMINAL_STATES and current_status != JobStates.SUSPENDED:
             return JobStates.SUSPENDED
         else:
             raise JobStateError(f"Cannot suspend job in state: {current_status}")
+    elif response_action == "CANCEL":
+        # Allow cancellation from any non-terminal state
+        if current_status not in JobStates.TERMINAL_STATES:
+            return JobStates.CANCELED
+        else:
+            raise JobStateError(f"Cannot cancel job in state: {current_status}")
     else:
         raise JobStateError(f"Invalid state transition: {current_status} + {response_action}")
 
@@ -178,11 +249,8 @@ def transition_state_on_error(current_status: str, error_classification: Any) ->
     new_status = get_new_job_status(error_classification)
 
     # Special handling for certain states
-    if current_status == "RUNNING" and new_status is None:
-        # Running jobs that encounter transient errors stay running for retry
-        return None
-    elif current_status == "REVIEWING" and new_status is None:
-        # Reviewing jobs that encounter transient errors stay reviewing for retry
+    if current_status in (JobStates.EXECUTING, JobStates.RUNNING) and new_status is None:
+        # Executing jobs that encounter transient errors stay executing for retry
         return None
 
     return new_status
@@ -198,8 +266,10 @@ def can_transition_to_error_state(current_status: str) -> bool:
     Returns:
         True if error transitions are allowed from this state.
     """
-    # Only executing states can transition to error states
-    executing_states = {"RUNNING", "REVIEWING"}
+    # Transient states can transition to error states
+    executing_states = {JobStates.PROVISIONING, JobStates.EXECUTING, JobStates.RECOVERING, JobStates.HARVESTING}
+    # Include legacy states for backward compatibility
+    executing_states.update({JobStates.RUNNING, JobStates.REVIEWING})
     return current_status in executing_states
 
 
@@ -248,7 +318,7 @@ def get_error_recovery_options(current_status: str) -> Dict[str, Any]:
 
 def validate_state_transition(current_status: str, target_status: str, action: str = "") -> bool:
     """
-    Comprehensive validation of state transitions according to the enhanced state machine.
+    Comprehensive validation of state transitions according to the state machine.
 
     Args:
         current_status: Current job status.
@@ -262,8 +332,7 @@ def validate_state_transition(current_status: str, target_status: str, action: s
         JobStateError: If transition violates state machine rules.
     """
     # Terminal states - cannot transition out of these
-    terminal_states = {JobStates.SUCCESS, JobStates.CANCELED, JobStates.FAILED}
-    if current_status in terminal_states:
+    if current_status in JobStates.TERMINAL_STATES:
         if target_status != current_status:
             raise JobStateError(f"Cannot transition out of terminal state '{current_status}'")
 
@@ -281,23 +350,52 @@ def validate_state_transition(current_status: str, target_status: str, action: s
 
     # PENDING state validation
     if current_status == JobStates.PENDING:
-        valid_pending_targets = {JobStates.RUNNING, JobStates.SUSPENDED, JobStates.CANCELED}
+        valid_pending_targets = {JobStates.PROVISIONING, JobStates.SUSPENDED, JobStates.CANCELED}
+        # Include legacy RUNNING for backward compatibility
+        valid_pending_targets.add(JobStates.RUNNING)
         if target_status not in valid_pending_targets:
             raise JobStateError(f"PENDING jobs can only transition to {valid_pending_targets}, not '{target_status}'")
 
-    # RUNNING state validation
+    # PROVISIONING state validation
+    if current_status == JobStates.PROVISIONING:
+        valid_provisioning_targets = {JobStates.EXECUTING, JobStates.INTERVENTION_REQUIRED, JobStates.CANCELED}
+        if target_status not in valid_provisioning_targets:
+            raise JobStateError(f"PROVISIONING jobs can only transition to {valid_provisioning_targets}, not '{target_status}'")
+
+    # EXECUTING state validation
+    if current_status == JobStates.EXECUTING:
+        valid_executing_targets = {JobStates.HARVESTING, JobStates.RECOVERING, JobStates.CANCELED}
+        if target_status not in valid_executing_targets:
+            raise JobStateError(f"EXECUTING jobs can only transition to {valid_executing_targets}, not '{target_status}'")
+
+    # RECOVERING state validation
+    if current_status == JobStates.RECOVERING:
+        valid_recovering_targets = {JobStates.EXECUTING}
+        if target_status not in valid_recovering_targets:
+            raise JobStateError(f"RECOVERING jobs can only transition to {valid_recovering_targets}, not '{target_status}'")
+
+    # HARVESTING state validation
+    if current_status == JobStates.HARVESTING:
+        valid_harvesting_targets = {JobStates.SUCCESS, JobStates.APPROVAL_REQUIRED, JobStates.INTERVENTION_REQUIRED, JobStates.CANCELED}
+        if target_status not in valid_harvesting_targets:
+            raise JobStateError(f"HARVESTING jobs can only transition to {valid_harvesting_targets}, not '{target_status}'")
+
+    # Legacy RUNNING state validation (for backward compatibility)
     if current_status == JobStates.RUNNING:
-        valid_running_targets = {JobStates.REVIEW_REQUIRED, JobStates.SUSPENDED, JobStates.CANCELED, JobStates.INTERVENTION_REQUIRED}
+        valid_running_targets = {JobStates.HARVESTING, JobStates.SUSPENDED, JobStates.CANCELED, JobStates.INTERVENTION_REQUIRED}
+        # Include legacy targets
+        valid_running_targets.update({JobStates.REVIEW_REQUIRED})
         if target_status not in valid_running_targets:
             raise JobStateError(f"RUNNING jobs can only transition to {valid_running_targets}, not '{target_status}'")
 
-    # REVIEW_REQUIRED state validation
+    # Legacy REVIEW_REQUIRED state validation (for backward compatibility)
     if current_status == JobStates.REVIEW_REQUIRED:
-        valid_review_targets = {JobStates.REVIEWING, JobStates.SUSPENDED, JobStates.CANCELED}
+        valid_review_targets = {JobStates.APPROVAL_REQUIRED, JobStates.INTERVENTION_REQUIRED, JobStates.SUSPENDED, JobStates.CANCELED}
+        valid_review_targets.add(JobStates.REVIEWING)  # Legacy
         if target_status not in valid_review_targets:
             raise JobStateError(f"REVIEW_REQUIRED jobs can only transition to {valid_review_targets}, not '{target_status}'")
 
-    # REVIEWING state validation
+    # Legacy REVIEWING state validation (for backward compatibility)
     if current_status == JobStates.REVIEWING:
         valid_reviewing_targets = {JobStates.APPROVAL_REQUIRED, JobStates.INTERVENTION_REQUIRED, JobStates.SUSPENDED, JobStates.CANCELED}
         if target_status not in valid_reviewing_targets:
@@ -311,12 +409,11 @@ def validate_state_transition(current_status: str, target_status: str, action: s
 
     # INTERVENTION_REQUIRED state validation
     if current_status == JobStates.INTERVENTION_REQUIRED:
-        valid_intervention_targets = {JobStates.PENDING, JobStates.REVIEW_REQUIRED, JobStates.SUSPENDED, JobStates.CANCELED}
+        valid_intervention_targets = {JobStates.PENDING, JobStates.SUSPENDED, JobStates.CANCELED}
         if target_status not in valid_intervention_targets:
             raise JobStateError(f"INTERVENTION_REQUIRED jobs can only transition to {valid_intervention_targets}, not '{target_status}'")
 
-    # ATTACHED/DETACHED validation for attach/recover sessions
-    # Note: ATTACHED/DETACHED states are legacy and may be removed in future versions
+    # ATTACHED/DETACHED validation for attach/recover sessions (legacy)
     if current_status == JobStates.ATTACHED:
         valid_attached_targets = {JobStates.SUSPENDED, JobStates.DETACHED}
         if target_status not in valid_attached_targets:
@@ -341,9 +438,11 @@ def validate_error_transition(current_status: str, target_status: str) -> bool:
     Returns:
         True if transition is valid, False otherwise.
     """
-    # Error states can transition back to execution states for recovery
-    error_states = {"INTERVENTION_REQUIRED", "CANCELED", "APPROVAL_REQUIRED"}
-    execution_states = {"PENDING", "RUNNING", "REVIEW_REQUIRED", "REVIEWING", "APPROVAL_REQUIRED"}
+    # Error/human-intervention states can transition back to execution states for recovery
+    error_states = {JobStates.INTERVENTION_REQUIRED, JobStates.CANCELED, JobStates.APPROVAL_REQUIRED}
+    execution_states = {JobStates.PENDING, JobStates.PROVISIONING, JobStates.EXECUTING, JobStates.APPROVAL_REQUIRED}
+    # Include legacy states for backward compatibility
+    execution_states.update({JobStates.RUNNING, JobStates.REVIEW_REQUIRED, JobStates.REVIEWING})
 
     if current_status in error_states and target_status in execution_states:
         # Allow recovery transitions from error states

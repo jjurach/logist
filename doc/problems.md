@@ -123,18 +123,20 @@ This document identifies contradictions between the intended architecture (as de
 
 ### 7. Worker/Supervisor Model vs Runner/Agent Model
 
-**New Architecture**: Focuses on Runner (environment) + Agent (CLI tool) separation
+**Status: RESOLVED** (December 2025)
 
-**Current Documentation**: Heavily emphasizes Worker/Supervisor role model:
-- `doc/01_architecture.md`: Three-phase loop (Worker -> Supervisor -> Steward)
-- `doc/02_roles_overview.md`: Worker and Supervisor role definitions
-- `doc/04_state_machine.md`: States tied to Worker/Supervisor execution
+The Worker/Supervisor role system has been completely removed from Logist. The architecture now uses:
+- **Runner Interface**: Controls WHERE code executes (podman, docker, kubernetes, direct)
+- **Agent Provider Interface**: Controls WHAT CLI tool executes (cline, aider, claude-code, etc.)
 
-**Clarification Needed**: These are orthogonal concepts:
-- Runner/Agent = Infrastructure layer (HOW to run)
-- Worker/Supervisor = Role layer (WHAT roles exist)
+**Changes Made:**
+- Removed `src/logist/services/role_manager.py` and all role-related code
+- Removed `role list`, `role inspect` CLI commands
+- Updated `doc/01_architecture.md` to use step-based execution model
+- Updated `doc/04_state_machine.md` with runner-aligned states (PROVISIONING, EXECUTING, HARVESTING, RECOVERING)
+- Archived `doc/02_roles_overview.md` to `doc/archive/legacy-roles.md`
 
-**Resolution Required**: Documentation should clarify that Runner/Agent is infrastructure; Worker/Supervisor are logical roles that USE the infrastructure.
+Agents now handle their own mode switching internally (architect/editor modes), eliminating the need for external Worker/Supervisor role management.
 
 ---
 
@@ -142,16 +144,22 @@ This document identifies contradictions between the intended architecture (as de
 
 ### 8. DRAFT State and Job Activation
 
-**New Architecture**: Mentions job creation with prompt attribute
+**Status: RESOLVED** (December 2025)
 
-**Current State Machine** (`doc/04_state_machine.md`):
-- DRAFT state exists for configuration before activation
-- `logist job activate` command transitions DRAFT -> PENDING
+The state machine has been redesigned with runner-aligned states:
 
-**Alignment Check**: These are consistent but documentation should clarify:
-- Job creation creates DRAFT state
-- `prompt` attribute set during DRAFT phase
-- Activation validates required attributes before transitioning
+**New State Flow:**
+```
+DRAFT → PENDING → PROVISIONING → EXECUTING → HARVESTING → [resting state]
+```
+
+**Resting States:** DRAFT, PENDING, SUCCESS, CANCELED, SUSPENDED, APPROVAL_REQUIRED, INTERVENTION_REQUIRED
+
+**Transient States:** PROVISIONING, EXECUTING, RECOVERING, HARVESTING
+
+**Deprecated States:** RUNNING, PAUSED, REVIEW_REQUIRED, REVIEWING, FAILED
+
+See `doc/04_state_machine.md` for the complete updated state machine.
 
 ---
 
@@ -191,5 +199,5 @@ This document identifies contradictions between the intended architecture (as de
 
 3. **Low Priority** (Documentation cleanup):
    - Update Cline-centric documentation (#2)
-   - Clarify Worker/Supervisor vs Runner/Agent (#7)
-   - Verify DRAFT state workflow (#8)
+   - ~~Clarify Worker/Supervisor vs Runner/Agent (#7)~~ **RESOLVED**
+   - ~~Verify DRAFT state workflow (#8)~~ **RESOLVED**

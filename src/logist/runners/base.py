@@ -174,3 +174,36 @@ class Runner(ABC):
             process_id: The identifier returned by spawn()
         """
         pass
+
+    def recover(self, process_id: str, job_context: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
+        """
+        Attempt to recover a stuck execution.
+
+        This method is called when an execution times out or becomes stuck.
+        It attempts to restart the agent with updated inputs derived from
+        the current execution state.
+
+        The RECOVERING state is transient - it quickly returns to EXECUTING
+        with updated inputs if recovery succeeds.
+
+        Args:
+            process_id: The identifier of the stuck process
+            job_context: Current job context including:
+                - logs: Recent log output from the process
+                - job_dir: Path to the job directory
+                - workspace_dir: Path to the workspace
+                - timeout_reason: Why recovery was triggered
+
+        Returns:
+            Tuple of (success, updated_inputs):
+            - (True, {"new_prompt": "...", ...}) - Recovery succeeded, continue EXECUTING
+            - (False, {}) - Recovery failed, transition to INTERVENTION_REQUIRED
+
+        Recovery strategies vary by runner:
+        - Docker: Uses `docker exec` to restart session using saved state
+        - Podman: Uses `podman exec` equivalent
+        - Direct: Spawns new process with updated context from logs
+        - Kubernetes: Creates new pod with recovery configuration
+        """
+        # Default implementation: recovery not supported, fail immediately
+        return (False, {})

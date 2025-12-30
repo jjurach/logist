@@ -36,7 +36,8 @@ class TestStateMachineBasics:
 
     def test_terminal_states_defined(self):
         """Test that terminal states are properly identified."""
-        terminal_states = {JobStates.SUCCESS, JobStates.CANCELED, JobStates.FAILED}
+        # Terminal states are SUCCESS and CANCELED (FAILED is deprecated)
+        terminal_states = JobStates.TERMINAL_STATES
 
         # Verify these are considered terminal
         for state in terminal_states:
@@ -59,13 +60,17 @@ class TestValidStateTransitions:
 
     def test_pending_transitions(self):
         """Test valid transitions from PENDING state."""
-        # PENDING -> RUNNING (execution)
-        result = transition_state(JobStates.PENDING, "COMPLETED")
-        assert result == JobStates.RUNNING
+        # PENDING -> PROVISIONING (step starts)
+        result = transition_state(JobStates.PENDING, "STEP_START")
+        assert result == JobStates.PROVISIONING
 
         # PENDING -> SUSPENDED (suspend)
         result = transition_state(JobStates.PENDING, "SUSPEND")
         assert result == JobStates.SUSPENDED
+
+        # PENDING -> CANCELED (cancel)
+        result = transition_state(JobStates.PENDING, "CANCEL")
+        assert result == JobStates.CANCELED
 
     def test_suspended_transitions(self):
         """Test valid transitions from SUSPENDED state."""
@@ -74,22 +79,56 @@ class TestValidStateTransitions:
         assert result == JobStates.PENDING
 
     def test_running_transitions(self):
-        """Test valid transitions from RUNNING state."""
-        # RUNNING -> REVIEW_REQUIRED (completion)
+        """Test valid transitions from RUNNING state (legacy backward compatibility)."""
+        # RUNNING -> HARVESTING (completion) - new behavior for legacy state
         result = transition_state(JobStates.RUNNING, "COMPLETED")
-        assert result == JobStates.REVIEW_REQUIRED
+        assert result == JobStates.HARVESTING
 
         # RUNNING -> INTERVENTION_REQUIRED (stuck)
         result = transition_state(JobStates.RUNNING, "STUCK")
         assert result == JobStates.INTERVENTION_REQUIRED
 
-        # RUNNING -> PENDING (retry)
-        result = transition_state(JobStates.RUNNING, "RETRY")
-        assert result == JobStates.PENDING
-
         # RUNNING -> SUSPENDED (suspend)
         result = transition_state(JobStates.RUNNING, "SUSPEND")
         assert result == JobStates.SUSPENDED
+
+        # RUNNING -> CANCELED (cancel)
+        result = transition_state(JobStates.RUNNING, "CANCEL")
+        assert result == JobStates.CANCELED
+
+    def test_new_transient_state_transitions(self):
+        """Test transitions through new transient states."""
+        # PROVISIONING -> EXECUTING (provision complete)
+        result = transition_state(JobStates.PROVISIONING, "PROVISION_COMPLETE")
+        assert result == JobStates.EXECUTING
+
+        # PROVISIONING -> INTERVENTION_REQUIRED (provision failed)
+        result = transition_state(JobStates.PROVISIONING, "PROVISION_FAILED")
+        assert result == JobStates.INTERVENTION_REQUIRED
+
+        # EXECUTING -> HARVESTING (execution complete)
+        result = transition_state(JobStates.EXECUTING, "EXECUTE_COMPLETE")
+        assert result == JobStates.HARVESTING
+
+        # EXECUTING -> RECOVERING (timeout/stuck)
+        result = transition_state(JobStates.EXECUTING, "RECOVER_START")
+        assert result == JobStates.RECOVERING
+
+        # RECOVERING -> EXECUTING (recovery succeeds)
+        result = transition_state(JobStates.RECOVERING, "RECOVER_COMPLETE")
+        assert result == JobStates.EXECUTING
+
+        # HARVESTING -> SUCCESS (goal achieved)
+        result = transition_state(JobStates.HARVESTING, "HARVEST_SUCCESS")
+        assert result == JobStates.SUCCESS
+
+        # HARVESTING -> APPROVAL_REQUIRED (needs approval)
+        result = transition_state(JobStates.HARVESTING, "HARVEST_APPROVAL")
+        assert result == JobStates.APPROVAL_REQUIRED
+
+        # HARVESTING -> INTERVENTION_REQUIRED (error/stuck)
+        result = transition_state(JobStates.HARVESTING, "HARVEST_INTERVENTION")
+        assert result == JobStates.INTERVENTION_REQUIRED
 
     def test_supervisor_transitions(self):
         """Test valid supervisor-related transitions."""
@@ -133,14 +172,15 @@ class TestInvalidStateTransitions:
 
     def test_terminal_state_transitions_blocked(self):
         """Test that terminal states cannot transition to other states."""
-        terminal_states = [JobStates.SUCCESS, JobStates.CANCELED, JobStates.FAILED]
+        # Only SUCCESS and CANCELED are terminal (FAILED is deprecated)
+        terminal_states = list(JobStates.TERMINAL_STATES)
 
         for terminal_state in terminal_states:
             with pytest.raises(JobStateError, match="Cannot transition out of terminal state"):
                 validate_state_transition(terminal_state, JobStates.PENDING)
 
             with pytest.raises(JobStateError, match="Cannot transition out of terminal state"):
-                validate_state_transition(terminal_state, JobStates.RUNNING)
+                validate_state_transition(terminal_state, JobStates.EXECUTING)
 
     def test_suspended_invalid_targets(self):
         """Test that SUSPENDED can only transition to valid targets."""
@@ -170,7 +210,8 @@ class TestInvalidStateTransitions:
 
     def test_suspend_terminal_states_blocked(self):
         """Test that terminal states cannot be suspended."""
-        terminal_states = [JobStates.SUCCESS, JobStates.CANCELED, JobStates.FAILED]
+        # Only SUCCESS and CANCELED are terminal (FAILED is deprecated)
+        terminal_states = list(JobStates.TERMINAL_STATES)
 
         for state in terminal_states:
             with pytest.raises(JobStateError, match=f"Cannot suspend job in state: {state}"):
@@ -182,18 +223,18 @@ class TestStateValidation:
 
     def test_pending_state_validation(self):
         """Test validation for PENDING state transitions."""
-        valid_targets = [JobStates.RUNNING, JobStates.SUSPENDED, JobStates.CANCELED]
+        valid_targets = [JobStates.PROVISIONING, JobStates.RUNNING, JobStates.SUSPENDED, JobStates.CANCELED]
 
         for target in valid_targets:
             assert validate_state_transition(JobStates.PENDING, target)
 
         # Test invalid target
         with pytest.raises(JobStateError):
-            validate_state_transition(JobStates.PENDING, JobStates.REVIEW_REQUIRED)
+            validate_state_transition(JobStates.PENDING, JobStates.SUCCESS)
 
     def test_running_state_validation(self):
-        """Test validation for RUNNING state transitions."""
-        valid_targets = [JobStates.REVIEW_REQUIRED, JobStates.SUSPENDED, JobStates.CANCELED, JobStates.INTERVENTION_REQUIRED]
+        """Test validation for RUNNING state transitions (legacy backward compatibility)."""
+        valid_targets = [JobStates.HARVESTING, JobStates.REVIEW_REQUIRED, JobStates.SUSPENDED, JobStates.CANCELED, JobStates.INTERVENTION_REQUIRED]
 
         for target in valid_targets:
             assert validate_state_transition(JobStates.RUNNING, target)
@@ -201,6 +242,22 @@ class TestStateValidation:
         # Test invalid target
         with pytest.raises(JobStateError):
             validate_state_transition(JobStates.RUNNING, JobStates.SUCCESS)
+
+    def test_new_transient_state_validation(self):
+        """Test validation for new transient states."""
+        # PROVISIONING -> EXECUTING is valid
+        assert validate_state_transition(JobStates.PROVISIONING, JobStates.EXECUTING)
+
+        # EXECUTING -> HARVESTING is valid
+        assert validate_state_transition(JobStates.EXECUTING, JobStates.HARVESTING)
+
+        # RECOVERING -> EXECUTING is valid
+        assert validate_state_transition(JobStates.RECOVERING, JobStates.EXECUTING)
+
+        # HARVESTING -> SUCCESS, APPROVAL_REQUIRED, INTERVENTION_REQUIRED are valid
+        assert validate_state_transition(JobStates.HARVESTING, JobStates.SUCCESS)
+        assert validate_state_transition(JobStates.HARVESTING, JobStates.APPROVAL_REQUIRED)
+        assert validate_state_transition(JobStates.HARVESTING, JobStates.INTERVENTION_REQUIRED)
 
     def test_attach_session_validation(self):
         """Test validation for attach/recover session states."""

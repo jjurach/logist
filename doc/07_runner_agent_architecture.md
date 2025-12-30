@@ -187,7 +187,11 @@ The agent subclass concerns itself with:
 
 ### status Attribute
 
-The status of a job is stored according to the state sequence defined in `doc/04_state_machine.md`. Valid states include: DRAFT, PENDING, RUNNING, REVIEW_REQUIRED, REVIEWING, APPROVAL_REQUIRED, INTERVENTION_REQUIRED, SUCCESS, CANCELED.
+The status of a job is stored according to the state sequence defined in `doc/04_state_machine.md`. Valid states include:
+
+**Resting States:** DRAFT, PENDING, SUCCESS, CANCELED, SUSPENDED, APPROVAL_REQUIRED, INTERVENTION_REQUIRED
+
+**Transient States (during step execution):** PROVISIONING, EXECUTING, RECOVERING, HARVESTING
 
 ### prompt Attribute
 
@@ -233,43 +237,84 @@ These overrides are stored in the job manifest and persist across job operations
 
 ## Runner Lifecycle Operations
 
-The Runner interface defines a complete lifecycle for job execution. Each phase maps to specific runner methods:
+The Runner interface defines a complete lifecycle for job execution. Each phase maps to specific runner methods and job states (see `doc/04_state_machine.md`):
 
-### Lifecycle Phases
+### Lifecycle Phases and State Mapping
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Runner Lifecycle                              │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  1. PROVISION                    2. SPAWN                        │
-│  ┌──────────────────┐           ┌──────────────────┐            │
-│  │ provision()      │──────────▶│ spawn()          │            │
-│  │ - Clone repo     │           │ - Start process  │            │
-│  │ - Setup branch   │           │ - Return PID     │            │
-│  │ - Copy files     │           │ - Configure env  │            │
-│  └──────────────────┘           └────────┬─────────┘            │
-│                                          │                       │
-│                                          ▼                       │
-│                                 3. MONITOR                       │
-│                                 ┌──────────────────┐            │
-│                                 │ is_alive()       │            │
-│                                 │ get_logs()       │◀─────┐     │
-│                                 │ wait()           │      │     │
-│                                 └────────┬─────────┘      │     │
-│                                          │         Loop   │     │
-│                                          └────────────────┘     │
-│                                          │                       │
-│                                          ▼                       │
-│  4. HARVEST                     5. CLEANUP                       │
-│  ┌──────────────────┐           ┌──────────────────┐            │
-│  │ harvest()        │──────────▶│ terminate()      │            │
-│  │ - Commit changes │           │ cleanup()        │            │
-│  │ - Collect files  │           │ - Kill process   │            │
-│  │ - Record results │           │ - Free resources │            │
-│  └──────────────────┘           └──────────────────┘            │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    Runner Lifecycle with Job States                          │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  Job State: PENDING                                                          │
+│       │                                                                      │
+│       ▼                                                                      │
+│  1. PROVISION ─────────────────────────────────────────────────────────────  │
+│  Job State: PROVISIONING                                                     │
+│  ┌──────────────────┐                                                        │
+│  │ provision()      │                                                        │
+│  │ - Clone repo     │                                                        │
+│  │ - Setup branch   │                                                        │
+│  │ - Copy files     │                                                        │
+│  └────────┬─────────┘                                                        │
+│           │                                                                  │
+│           ▼                                                                  │
+│  2. SPAWN ─────────────────────────────────────────────────────────────────  │
+│  Job State: EXECUTING                                                        │
+│  ┌──────────────────┐                                                        │
+│  │ spawn()          │                                                        │
+│  │ - Start process  │                                                        │
+│  │ - Return PID     │                                                        │
+│  │ - Configure env  │                                                        │
+│  └────────┬─────────┘                                                        │
+│           │                                                                  │
+│           ▼                                                                  │
+│  3. MONITOR ───────────────────────────────────────────────────────────────  │
+│  Job State: EXECUTING                                                        │
+│  ┌──────────────────┐                                                        │
+│  │ is_alive()       │                                                        │
+│  │ get_logs()       │◀─────────────────┐                                     │
+│  │ wait()           │                  │ Loop                                │
+│  └────────┬─────────┘                  │                                     │
+│           │                            │                                     │
+│           ├────────────────────────────┘                                     │
+│           │                                                                  │
+│           ├──────────────────────────────────────────────────────────────┐   │
+│           │ (timeout/stuck)                                              │   │
+│           ▼                                                              │   │
+│  3b. RECOVER ──────────────────────────────────────────────────────────  │   │
+│  Job State: RECOVERING                                                   │   │
+│  ┌──────────────────┐                                                    │   │
+│  │ recover()        │                                                    │   │
+│  │ - Restart agent  │──────────────────────────────────────────────────▶ │   │
+│  │ - Update inputs  │  (success: return to EXECUTING)                    │   │
+│  └──────────────────┘                                                    │   │
+│           │                                                              │   │
+│           │ (agent completes)                                            │   │
+│           ▼                                                                  │
+│  4. HARVEST ───────────────────────────────────────────────────────────────  │
+│  Job State: HARVESTING                                                       │
+│  ┌──────────────────┐                                                        │
+│  │ harvest()        │                                                        │
+│  │ - Commit changes │                                                        │
+│  │ - Collect files  │                                                        │
+│  │ - Record results │                                                        │
+│  │ - Determine exit │                                                        │
+│  └────────┬─────────┘                                                        │
+│           │                                                                  │
+│           ├──────────────▶ SUCCESS (goal achieved)                           │
+│           ├──────────────▶ APPROVAL_REQUIRED (needs sign-off)                │
+│           └──────────────▶ INTERVENTION_REQUIRED (error/stuck)               │
+│                                                                              │
+│  5. CLEANUP ───────────────────────────────────────────────────────────────  │
+│  ┌──────────────────┐                                                        │
+│  │ terminate()      │                                                        │
+│  │ cleanup()        │                                                        │
+│  │ - Kill process   │                                                        │
+│  │ - Free resources │                                                        │
+│  └──────────────────┘                                                        │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### 1. Provision Phase
@@ -334,6 +379,45 @@ def wait(self, process_id: str, timeout: Optional[float] = None) -> Tuple[int, s
     """Wait for process completion, return (exit_code, logs)."""
 ```
 
+### 3b. Recover Phase
+
+The `recover()` method attempts to restart a stuck execution:
+
+```python
+def recover(self, process_id: str, job_context: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
+    """
+    Attempt to recover a stuck execution.
+
+    This method is called when an execution times out or becomes stuck.
+    It attempts to restart the agent with updated inputs derived from
+    the current execution state.
+
+    Args:
+        process_id: The identifier of the stuck process
+        job_context: Current job context including logs and state
+
+    Returns:
+        Tuple of (success, updated_inputs):
+        - (True, {"new_prompt": "...", ...}) - Recovery succeeded, continue EXECUTING
+        - (False, {}) - Recovery failed, transition to INTERVENTION_REQUIRED
+
+    Notes:
+        - RECOVERING state is transient; it quickly returns to EXECUTING
+        - The runner may use logs to determine recovery strategy
+        - Docker runner uses `docker exec` to restart sessions
+        - Direct runner may spawn a new process with updated context
+    """
+```
+
+Recovery strategies vary by runner:
+
+| Runner | Recovery Strategy |
+|--------|-------------------|
+| Docker | `docker exec` to restart session using saved state |
+| Podman | `podman exec` equivalent |
+| Direct | Spawn new process with updated context from logs |
+| Kubernetes | Create new pod with recovery configuration |
+
 ### 4. Harvest Phase
 
 The `harvest()` method collects results after execution:
@@ -375,14 +459,17 @@ def cleanup(self, process_id: str) -> None:
 
 ## Mapping CLI Commands to Runner Operations
 
-| CLI Command | Runner Methods Called |
-|-------------|----------------------|
-| `logist job create` | (No runner interaction) |
-| `logist job activate` | (No runner interaction) |
-| `logist job step` | `provision()` → `spawn()` → `wait()` → `harvest()` → `cleanup()` |
-| `logist job run` | Multiple `step` cycles |
-| `logist job status` | `is_alive()`, `get_logs()` |
-| `logist workspace cleanup` | `cleanup()` |
+| CLI Command | Runner Methods | Job State Transitions |
+|-------------|----------------|----------------------|
+| `logist job create` | (None) | → DRAFT |
+| `logist job activate` | (None) | DRAFT → PENDING |
+| `logist job step` | `provision()` → `spawn()` → `wait()` → `harvest()` → `cleanup()` | PENDING → PROVISIONING → EXECUTING → HARVESTING → [resting state] |
+| `logist job run` | Multiple `step` cycles | Cycles through PENDING jobs |
+| `logist job status` | `is_alive()`, `get_logs()` | (No transition) |
+| `logist workspace cleanup` | `cleanup()` | (No transition) |
+| `logist job approve` | (None) | APPROVAL_REQUIRED → SUCCESS |
+| `logist job reject` | (None) | APPROVAL_REQUIRED → PENDING |
+| `logist job resubmit` | (None) | INTERVENTION_REQUIRED → PENDING |
 
 ## Error Handling
 
