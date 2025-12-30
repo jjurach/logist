@@ -88,11 +88,6 @@ class JobDirectoryManager:
             # Create main job directory
             job_dir.mkdir(parents=True)
 
-            # Create standard subdirectories
-            subdirs = ["workspace", "logs", "backups", "temp"]
-            for subdir in subdirs:
-                (job_dir / subdir).mkdir()
-
             # Create initial job manifest
             manifest_path = job_dir / "job_manifest.json"
             manifest = self._create_initial_manifest(job_id, job_config)
@@ -232,14 +227,6 @@ class JobDirectoryManager:
             "missing_files": [],
             "missing_dirs": []
         }
-
-        # Check required directories
-        required_dirs = ["workspace", "logs", "backups"]
-        for dirname in required_dirs:
-            dir_path = job_dir / dirname
-            if not dir_path.exists():
-                validation_result["valid"] = False
-                validation_result["missing_dirs"].append(dirname)
 
         # Check required files
         required_files = ["job_manifest.json"]

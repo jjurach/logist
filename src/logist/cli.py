@@ -198,13 +198,14 @@ def workspace():
 
 @job.command(name="create")
 @click.argument("directory", type=click.Path(), default=".")
+@click.option("--name", "-n", "job_name", help="Job name/ID (auto-generated if not specified)")
 @click.option("--prompt", "-p", help="Task prompt for the job (required for activation)")
 @click.option("--file", "-f", "prompt_file", type=click.Path(exists=True), help="Read prompt from file")
 @click.option("--git-source-repo", help="Git source repository path (auto-detected if not specified)")
 @click.option("--runner", help="Runner to use (podman, docker, kubernetes, direct)")
 @click.option("--agent", help="Agent provider to use (cline-cli, aider-chat, claude-code, etc.)")
 @click.pass_context
-def create_job(ctx, directory: str, prompt: str, prompt_file: str, git_source_repo: str, runner: str, agent: str):
+def create_job(ctx, directory: str, job_name: str, prompt: str, prompt_file: str, git_source_repo: str, runner: str, agent: str):
     """Initialize a directory as a job or update it.
 
     Jobs require a prompt (--prompt or --file) before activation.
@@ -231,7 +232,8 @@ def create_job(ctx, directory: str, prompt: str, prompt_file: str, git_source_re
         prompt=final_prompt,
         git_source_repo=final_git_source_repo,
         runner=runner,
-        agent=agent
+        agent=agent,
+        job_name=job_name
     )
     click.echo(f"🎯 Job '{job_id}' created/updated and selected.")
     if not final_prompt:
@@ -2322,43 +2324,6 @@ def activate_job(ctx, job_id: str | None, rank: int):
         click.secho(f"   ✅ Job '{final_job_id}' activated successfully!", fg="green")
         click.echo(f"   🔄 Status changed: {JobStates.DRAFT} → {new_status}")
         click.echo(f"   📊 Queue position: {jobs_index['queue'].index(final_job_id)}")
-
-        # Generate prompt.md if config exists
-        config_path = os.path.join(job_dir, "config.json")
-        prompt_path = os.path.join(job_dir, "prompt.md")
-
-        if os.path.exists(config_path):
-            try:
-                with open(config_path, 'r') as f:
-                    config = json.load(f)
-
-                prompt_content = []
-                if config.get("prompt"):
-                    prompt_content.append(config["prompt"])
-                    prompt_content.append("")  # Blank line
-
-                sections = [
-                    ("objective", "Objective"),
-                    ("details", "Details"),
-                    ("acceptance", "Acceptance Criteria")
-                ]
-
-                for key, title in sections:
-                    if config.get(key):
-                        prompt_content.append(f"<{key}>")
-                        prompt_content.append(config[key])
-                        prompt_content.append(f"</{key}>")
-                        prompt_content.append("")  # Blank line
-
-                if prompt_content:
-                    with open(prompt_path, 'w') as f:
-                        f.write("\n".join(prompt_content).rstrip())
-
-                    click.echo("   📝 Generated prompt.md from configuration")
-            except (json.JSONDecodeError, OSError) as e:
-                click.secho(f"   ⚠️  Failed to generate prompt.md: {e}", fg="yellow")
-        else:
-            click.echo("   ℹ️  No configuration found - skipping prompt.md generation")
 
         # Show final queue state
         if jobs_index["queue"]:

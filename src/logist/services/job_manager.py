@@ -6,6 +6,7 @@ Handles job creation, selection, and management operations.
 
 import json
 import os
+import uuid
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 
@@ -30,7 +31,8 @@ class JobManagerService:
             return None
 
     def create_job(self, job_dir: str, jobs_dir: str, prompt: str = None,
-                   git_source_repo: str = None, runner: str = None, agent: str = None) -> str:
+                   git_source_repo: str = None, runner: str = None, agent: str = None,
+                   job_name: str = None) -> str:
         """Create or register a new job with manifest and directory structure.
 
         Args:
@@ -40,20 +42,29 @@ class JobManagerService:
             git_source_repo: Git source repository path
             runner: Runner to use (podman, docker, kubernetes, direct)
             agent: Agent provider to use (cline-cli, aider-chat, claude-code, etc.)
+            job_name: Explicit job name/ID (auto-generated if not specified)
 
         Returns:
             Job ID of the created/updated job
         """
         jobs_dir_abs = os.path.abspath(jobs_dir)
 
-        # Handle job directory path resolution
-        if os.path.isabs(job_dir):
+        # Determine job_id and job_dir_abs
+        if job_name:
+            # Explicit name provided - use it
+            job_id = job_name
+            job_dir_abs = os.path.join(jobs_dir_abs, job_id)
+        elif job_dir == "." or os.path.basename(os.path.normpath(os.path.abspath(job_dir))) == ".":
+            # Current directory or "." - generate random ID
+            job_id = f"job-{uuid.uuid4().hex[:8]}"
+            job_dir_abs = os.path.join(jobs_dir_abs, job_id)
+        elif os.path.isabs(job_dir):
             # Absolute path provided - use as-is for backward compatibility
             job_dir_abs = job_dir
             job_id = os.path.basename(job_dir_abs)
         else:
             # Relative path - create inside jobs_dir
-            job_id = job_dir  # Use the provided name as job_id
+            job_id = job_dir
             job_dir_abs = os.path.join(jobs_dir_abs, job_id)
 
         # Check if the job dir is inside the jobs_dir
@@ -67,14 +78,6 @@ class JobManagerService:
         print(f"[DEBUG {datetime.now().strftime('%H:%M:%S.%f')}] Creating job directory: {job_dir_abs}")
         os.makedirs(job_dir_abs, exist_ok=True)
         print(f"[DEBUG {datetime.now().strftime('%H:%M:%S.%f')}] Job directory created: {job_dir_abs}")
-
-        # Create standard subdirectories
-        subdirs = ["workspace", "logs", "backups", "temp"]
-        for subdir in subdirs:
-            subdir_path = os.path.join(job_dir_abs, subdir)
-            print(f"[DEBUG {datetime.now().strftime('%H:%M:%S.%f')}] Creating subdirectory: {subdir_path}")
-            os.makedirs(subdir_path, exist_ok=True)
-            print(f"[DEBUG {datetime.now().strftime('%H:%M:%S.%f')}] Subdirectory created: {subdir_path}")
 
         # Try to find and read job specification file
         job_spec = None
@@ -110,10 +113,6 @@ class JobManagerService:
         # Add required job attributes (prompt and gitSourceRepo)
         if prompt:
             job_manifest["prompt"] = prompt
-            # Also write prompt to prompt.md file
-            prompt_file_path = os.path.join(job_dir_abs, "prompt.md")
-            with open(prompt_file_path, 'w') as f:
-                f.write(prompt)
 
         if git_source_repo:
             job_manifest["gitSourceRepo"] = git_source_repo
@@ -591,15 +590,6 @@ class JobManagerService:
 
             # Validate required attributes before activation
             prompt = manifest.get("prompt")
-            if not prompt:
-                # Also check for prompt.md file
-                prompt_file_path = os.path.join(job_dir, "prompt.md")
-                if os.path.exists(prompt_file_path):
-                    with open(prompt_file_path, 'r') as f:
-                        prompt = f.read().strip()
-                    if prompt:
-                        manifest["prompt"] = prompt
-
             if not prompt:
                 raise Exception("Job activation failed: 'prompt' attribute is required. Use 'logist job config --prompt' to set it.")
 

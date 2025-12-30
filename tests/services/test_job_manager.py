@@ -75,6 +75,72 @@ class TestJobManagerService(unittest.TestCase):
         self.assertEqual(manifest["status"], JobStates.DRAFT)
         self.assertEqual(manifest["description"], "Job my-test-job")
 
+    def test_create_job_with_explicit_name(self):
+        """Test job creation with explicit job_name parameter."""
+        job_id = self.service.create_job(".", self.jobs_dir, job_name="my-custom-job")
+
+        # Verify job ID is the explicit name
+        self.assertEqual(job_id, "my-custom-job")
+
+        # Verify job manifest was created in the correct directory
+        job_dir = os.path.join(self.jobs_dir, "my-custom-job")
+        manifest_path = os.path.join(job_dir, "job_manifest.json")
+        self.assertTrue(os.path.exists(manifest_path))
+
+        with open(manifest_path, 'r') as f:
+            manifest = json.load(f)
+
+        self.assertEqual(manifest["job_id"], "my-custom-job")
+
+    def test_create_job_random_id_for_current_dir(self):
+        """Test job creation generates random ID when directory is '.' and no name specified."""
+        job_id = self.service.create_job(".", self.jobs_dir)
+
+        # Verify job ID follows the random format: job-{8 hex chars}
+        self.assertTrue(job_id.startswith("job-"))
+        self.assertEqual(len(job_id), 12)  # "job-" (4) + 8 hex chars
+
+        # Verify job manifest was created
+        job_dir = os.path.join(self.jobs_dir, job_id)
+        manifest_path = os.path.join(job_dir, "job_manifest.json")
+        self.assertTrue(os.path.exists(manifest_path))
+
+    def test_create_job_no_subdirectories(self):
+        """Test that job creation does not create subdirectories."""
+        job_id = self.service.create_job(".", self.jobs_dir, job_name="no-subdirs-job")
+
+        job_dir = os.path.join(self.jobs_dir, job_id)
+
+        # Verify no subdirectories are created
+        for subdir in ["workspace", "logs", "backups", "temp"]:
+            subdir_path = os.path.join(job_dir, subdir)
+            self.assertFalse(os.path.exists(subdir_path), f"Subdirectory {subdir} should not exist")
+
+        # Verify only job_manifest.json exists
+        contents = os.listdir(job_dir)
+        self.assertEqual(contents, ["job_manifest.json"])
+
+    def test_create_job_prompt_only_in_manifest(self):
+        """Test that prompt is stored only in manifest, not as prompt.md file."""
+        job_id = self.service.create_job(
+            ".", self.jobs_dir,
+            job_name="prompt-test-job",
+            prompt="Test prompt content"
+        )
+
+        job_dir = os.path.join(self.jobs_dir, job_id)
+
+        # Verify prompt.md does NOT exist
+        prompt_md_path = os.path.join(job_dir, "prompt.md")
+        self.assertFalse(os.path.exists(prompt_md_path), "prompt.md should not be created")
+
+        # Verify prompt is in manifest
+        manifest_path = os.path.join(job_dir, "job_manifest.json")
+        with open(manifest_path, 'r') as f:
+            manifest = json.load(f)
+
+        self.assertEqual(manifest["prompt"], "Test prompt content")
+
     def test_create_job_from_spec_file(self):
         """Test job creation with job specification file."""
         job_dir = os.path.join(self.jobs_dir, "my-test-job")

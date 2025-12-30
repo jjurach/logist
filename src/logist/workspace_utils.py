@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 import subprocess
@@ -1033,31 +1034,37 @@ def cleanup_completed_workspaces(jobs_dir: str, cleanup_policies: Optional[Dict[
     return result
 
 
-def discover_file_arguments(job_dir: str, prompt_file: Optional[str] = None) -> List[str]:
+def discover_file_arguments(job_dir: str, prompt_content: Optional[str] = None) -> List[str]:
     """
     Discovers files that should be passed as --file arguments to cline.
 
-    Scans prompt.md for file references and collects system/role files.
+    Scans prompt content for file references and collects system/role files.
 
     Args:
         job_dir: Job directory path
-        prompt_file: Optional specific prompt file, defaults to job_dir/prompt.md
+        prompt_content: Optional prompt content. If not provided, reads from job_manifest.json
 
     Returns:
         List of file paths to include in --file arguments
     """
     file_args = []
 
-    # Default prompt file location
-    if prompt_file is None:
-        prompt_file = os.path.join(job_dir, "prompt.md")
+    # Get prompt content from job_manifest.json if not provided
+    if prompt_content is None:
+        manifest_path = os.path.join(job_dir, "job_manifest.json")
+        if os.path.exists(manifest_path):
+            try:
+                with open(manifest_path, 'r') as f:
+                    manifest = json.load(f)
+                prompt_content = manifest.get("prompt", "")
+            except (json.JSONDecodeError, OSError):
+                prompt_content = ""
+        else:
+            prompt_content = ""
 
-    # Scan prompt.md for file references
-    if os.path.exists(prompt_file):
+    # Scan prompt content for file references
+    if prompt_content:
         try:
-            with open(prompt_file, 'r') as f:
-                prompt_content = f.read()
-
             # Look for relative file paths in workspace
             # This is a simple pattern - could be enhanced with more sophisticated parsing
             workspace_dir = os.path.join(job_dir, "workspace")
