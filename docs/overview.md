@@ -251,13 +251,13 @@ logist job status sample-job
 ## 🤝 Getting Involved
 
 ### For Users
-Start with the [Installation Guide](../README.md#installation) and work through the [CLI Reference](05_cli_reference.md) to understand command patterns.
+Start with the [Installation Guide](../README.md#installation) and work through the [CLI Reference](cli-reference.md) to understand command patterns.
 
 ### For Contributors
-See the [Master Development Plan](master-plan.md) for systematic implementation guidance and [Contributing Guide](../README.md#contributing) for development setup.
+See the [Project TODO](todo.md) for systematic implementation guidance and [Contributing Guide](../README.md#contributing) for development setup.
 
 ### For Stakeholders
-Review the [Architecture Deep Dive](01_architecture.md) and [Role System Details](02_roles_and_data.md) to understand the technical foundations.
+Review the [Architecture Deep Dive](architecture.md) and [Role System Details](roles-overview.md) to understand the technical foundations.
 
 ## 📚 Documentation Map
 
@@ -265,20 +265,20 @@ Review the [Architecture Deep Dive](01_architecture.md) and [Role System Details
 
 **New AI agents joining the project:**
 1. Read `overview.md` (this file) first - get 30-second project comprehension
-2. Read `01_architecture.md` - understand core concepts, jobs, agents, safety
-3. Read `02_roles_overview.md` - understand Worker/Supervisor role specialization
-4. Skim `03_cli_and_metrics.md` - know how humans interact with the system
+2. Read `architecture.md` - understand core concepts, jobs, agents, safety
+3. Read `roles-overview.md` - understand Worker/Supervisor role specialization
+4. Skim `cli-and-metrics.md` - know how humans interact with the system
 5. Read specific docs only when needed for your assigned task
 
 **For executing jobs:**
-- Focus on `communication-protocol.md` for understanding JSON response requirements
-- Use `04_state_machine.md` only if implementing state transition logic
+- Focus on `technical/communication-protocol.md` for understanding JSON response requirements
+- Use `state-machine.md` only if implementing state transition logic
 - Reference `archive/research-notes.md` only for historical Cline integration patterns
 
 **For developing new features:**
 - Read `implementation-history.md` for current architecture status and decisions
-- Study technical details in `docs/technical/` directory
-- Review `06_testing_strategy.md` for testing approaches
+- Study technical details in `technical/` directory
+- Review `testing-strategy.md` for testing approaches
 
 **For security/cost analysis:**
 - Focus on sections about Git isolation and resource guardrails
@@ -291,18 +291,18 @@ Review the [Architecture Deep Dive](01_architecture.md) and [Role System Details
 #### **User Onboarding (Start Here)**
 - **[Executive Overview](overview.md)** ← You are here - Project introduction
 - **[Quick Start](../README.md#quick-start)** - Installation and first job
-- **[Architecture Overview](01_architecture.md)** - Core concepts explained
+- **[Architecture Overview](architecture.md)** - Core concepts explained
 
 #### **Job Execution**
-- **[Role System](02_roles_overview.md)** - Worker & Supervisor agent specialization
-- **[CLI Commands](03_cli_and_metrics.md)** - Complete command reference
-- **[State Machine Logic](04_state_machine.md)** - Workflow and transitions
+- **[Role System](roles-overview.md)** - Worker & Supervisor agent specialization
+- **[CLI Commands](cli-and-metrics.md)** - Complete command reference
+- **[State Machine Logic](state-machine.md)** - Workflow and transitions
 
 #### **Technical Implementation**
 - **[Communication Protocol](technical/communication-protocol.md)** - JSON schemas & agent responses
 - **[Logging, Monitoring & Debugging](technical/logging-monitoring.md)** - Log files, metrics & debugging
 - **[Implementation History](implementation-history.md)** - Development timeline
-- **[Testing Strategy](06_testing_strategy.md)** - QA and validation
+- **[Testing Strategy](testing-strategy.md)** - QA and validation
 
 #### **Historical Archive**
 - **[Research Notes](archive/research-notes.md)** - Cline integration findings

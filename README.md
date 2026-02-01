@@ -340,6 +340,30 @@ logist job create config/sample-job.json
 logist job step sample-implementation
 ```
 
+## 📚 Documentation
+
+Complete documentation for Logist is available in the `docs/` directory:
+
+### For AI Agents
+- **[AGENTS.md](AGENTS.md)** - Mandatory workflow and unbreakable rules for AI agents
+- **[Definition of Done](docs/definition-of-done.md)** - Quality standards and completion criteria
+- **[Workflows](docs/workflows.md)** - Project-specific development processes
+
+### For Developers
+- **[Documentation Index](docs/README.md)** - Navigation hub for all documentation
+- **[Architecture](docs/architecture.md)** - Core concepts, job isolation, and safety
+- **[CLI Reference](docs/cli-reference.md)** - Detailed command reference and options
+- **[Implementation Reference](docs/implementation-reference.md)** - Practical code patterns and testing
+- **[State Machine](docs/state-machine.md)** - Detailed state transition logic
+- **[Roles Overview](docs/roles-overview.md)** - Agent specialization and role system
+
+### Technical Reference
+- **[Communication Protocol](docs/technical/communication-protocol.md)** - JSON schemas for agent communication
+- **[Logging & Monitoring](docs/technical/logging-monitoring.md)** - Metrics, logging, and debugging
+- **[Testing Strategy](docs/testing-strategy.md)** - Progressive testing methodology
+
+---
+
 ## 🏛️ Architecture
 
 **Core Components:**
@@ -354,41 +378,7 @@ logist job step sample-implementation
 3. **Review** (Supervisor validates quality)
 4. **Intervention** (Steward provides guidance via checkpoints)
 
-## 📚 Documentation
-
-This documentation follows a progressive learning path:
-
-### [`01_architecture.md`](docs/01_architecture.md) - Core Concepts
-- Project terminology (Logist, Job, Agent Run, Steward)
-- Execution philosophy and job isolation
-- Iterative Worker→Supervisor→Steward loop
-- Git safety practices and rollback mechanisms
-
-### [`02_roles_and_data.md`](docs/02_roles_and_data.md) - Roles and Communication
-- Programmable role system and manifest structure
-- JSON exit command protocol for agent communication
-- Structured output requirements and validation
-- Flow control integration
-
-### [`03_cli_and_metrics.md`](docs/03_cli_and_metrics.md) - CLI Interface and Guardrails
-- Four core logist commands (run, step, rerun, restep)
-- Metric tracking system (cost, time)
-- Threshold enforcement and halt states
-- Configuration options and recovery strategies
-
-### [`04_state_machine.md`](docs/04_state_machine.md) - Advanced Workflows
-- DAG-based task execution and state machine
-- Parallel task dependencies and failure handling
-- Intervention states and human gates
-- Reference implementation for future enhancements
-
-### Key Design Principles
-
-- **Safety First**: Git isolation prevents workspace corruption
-- **Structured Communication**: JSON protocols eliminate ambiguity
-- **Human Control**: Steward checkpoints maintain oversight
-- **Resource Aware**: Cost and time thresholds prevent runaway execution
-- **Composable**: Roles and jobs can be mixed and matched
+See **[Architecture Deep Dive](docs/architecture.md)** for more details.
 
 ## 🛡️ Safety Features
 

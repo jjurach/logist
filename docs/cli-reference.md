@@ -224,7 +224,7 @@ Performs a **non-destructive preview** of the next agent interaction for a given
 
 These commands control the lifecycle and execution flow of a job. If `JOB_ID` is omitted, they operate on the **currently selected job**.
 
-All execution commands create the job workspace directory (if it doesn't exist) before proceeding with execution. See [Job Isolation section](../01_architecture.md#job-isolation-safety-first) for workspace creation details.
+All execution commands create the job workspace directory (if it doesn't exist) before proceeding with execution. See [Job Isolation section](architecture.md#job-isolation-safety-first) for workspace creation details.
 
 -   **`logist job run [JOB_ID]`**: Executes a job continuously until it completes or requires human intervention. Creates workspace if needed.
 -   **`logist job step [JOB_ID] [--dry-run]`**: Executes only the next single phase of a job and then pauses. Creates workspace if needed.

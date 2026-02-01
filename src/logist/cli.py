@@ -1176,7 +1176,7 @@ def git_status(ctx, job_id: str | None):
                 for file in git_status_info["untracked_files"][:10]:
                     click.echo(f"      • {file}")
                 if len(git_status_info["untracked_files"]) > 10:
-                    click.echo(f"      ... and {len(git_status_info["untracked_files"]) - 10} more")
+                    click.echo(f"      ... and {len(git_status_info['untracked_files']) - 10} more")
 
             if git_status_info["recent_commits"]:
                 click.echo("   📚 Recent Commits:")
