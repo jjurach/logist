@@ -30,7 +30,7 @@ These files define:
 ## The Mandatory Reading List
 
 ### 1. Core Workflow
-**File:** [docs/system-prompts/workflows/logs-first.md](docs/system-prompts/workflows/logs-first.md)
+**File:** [docs/system-prompts/workflows/logs-first.md](workflows/logs-first.md)
 
 **What it contains:**
 - 5-step workflow (Analyze Request → Create Spec → Create Plan → Get Approval → Implement & Document)
@@ -79,7 +79,7 @@ These files provide additional context when working on specific features:
 - **Architecture:** [docs/architecture.md](docs/architecture.md) - System design, components, and data flow
 - **Implementation Reference:** [docs/implementation-reference.md](docs/implementation-reference.md) - Code patterns, style, and conventions
 - **Workflows:** [docs/workflows.md](docs/workflows.md) - Development processes and available workflow options
-- **Tool Guides:** [docs/system-prompts/tools/](docs/system-prompts/tools) - Guides for Aider, Claude Code, and other tools
+- **Tool Guides:** [docs/system-prompts/tools/](tools/) - Guides for Aider, Claude Code, and other tools
 
 ---
 
@@ -101,6 +101,27 @@ If you can't answer these, **re-read the mandatory files now**. This isn't punis
 
 **Remember:** Reading is REQUIRED, not suggested. These files are in your context for a reason.
 <!-- END-SECTION -->
+
+<!-- SECTION: PROJECT-SPECIFIC -->
+## Project-Specific Rules: Polecat Tactical Execution
+
+### 1. Your Role: Tactical Executor
+- **Source of Truth:** The Bead description (provided by Mayor) and `docs/specs/` (in Town Root).
+- **Mandate:** Execute the assigned Bead.
+- **Workflow:**
+    1.  Read the Bead (`bd show <id>`).
+    2.  Create a tactical plan in `dev_notes/project_plans/` (following the Logs-First workflow).
+    3.  Execute and verify.
+
+### 2. File Organization
+- **Architectural Specs:** `docs/specs/` (Mayor managed, authoritative).
+- **Execution Plans:** `dev_notes/` (Polecat managed, ephemeral/tactical).
+
+### 3. Documentation Access
+- **System Prompts:** `docs/system-prompts/` (Local Copy)
+- **Project Specs:** `${GT_TOWN_ROOT}/docs/specs/`
+<!-- END-SECTION -->
+
 
 <!-- SECTION: CORE-WORKFLOW -->
 # Agent Kernel: Core Workflow & Unbreakable Rules

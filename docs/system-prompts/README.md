@@ -844,64 +844,6 @@ project-root/
     └── changes/                       # Change documentation
 ```
 
-## Project Integration
-
-This Agent Kernel is integrated into the **Logist** project with the following extensions:
-
-### Entry Points
-
-- **[AGENTS.md](../../AGENTS.md)** - Main agent instructions combining Agent Kernel workflows with project-specific requirements
-- **[docs/definition-of-done.md](../definition-of-done.md)** - Project-specific DoD extending Agent Kernel universal and Python DoD
-- **[docs/workflows.md](../workflows.md)** - Project-specific development workflows
-
-### Project-Specific Extensions
-
-The project adds domain-specific requirements for:
-
-**Project Type:**
-- CLI Application
-- Agent Orchestration
-- Git-based Isolation
-
-**Technology Stack:**
-- Python 3.12+
-- Pytest
-- Ruff (formatting/linting)
-- Click (CLI)
-
-See [docs/definition-of-done.md](../definition-of-done.md) for complete project-specific requirements.
-
-### Sync Status
-
-- **Bootstrap sync:** Completed 2026-02-01
-- **Last integration update:** 2026-02-01
-- **Sections synchronized:** MANDATORY-READING, CORE-WORKFLOW, PRINCIPLES, PYTHON-DOD
-
-### Documentation Structure
-
-```
-project-root/
-├── AGENTS.md                           # Combined: Agent Kernel + project extensions
-├── .claude/CLAUDE.md                   # Claude Code entry point
-├── docs/
-│   ├── definition-of-done.md          # Project DoD (extends Agent Kernel)
-│   ├── architecture.md                # Project architecture
-│   ├── implementation-reference.md    # Implementation patterns
-│   ├── workflows.md                   # Project workflows (extends Agent Kernel)
-│   ├── README.md                      # Documentation hub
-│   └── system-prompts/                # Agent Kernel (this directory)
-│       ├── README.md                  # This file
-│       ├── principles/                # Universal principles
-│       ├── languages/                 # Language-specific standards
-│       ├── templates/                 # Document templates
-│       ├── workflows/                 # Workflow documentation
-│       └── tools/                     # Tool-specific guides
-└── dev_notes/                         # Runtime documentation
-    ├── specs/                         # Specifications
-    ├── project_plans/                 # Project plans
-    └── changes/                       # Change documentation
-```
-
 ## Version
 
 Agent Kernel v1.0 - January 2026
