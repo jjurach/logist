@@ -6,7 +6,60 @@
 
 ---
 
-## Architecture Overview
+## Multi-Project Architecture (hentown)
+
+The `hentown` repository is the **top-level project** that owns the single shared Dolt server
+for all its submodules. There is **one Dolt server per machine**, not one per project.
+
+```
+hentown/                        ← TOP-LEVEL: owns and starts the Dolt server
+  .beads/dolt/                  ← Server data directory (all databases live here)
+    beads_hentown/              ← hentown issues database
+    beads_hatchery/             ← hatchery issues database
+    beads_pigeon/               ← pigeon issues database
+    beads_chatterbox/           ← chatterbox issues database
+    beads_mellona/              ← mellona issues database
+    beads_pitchjudge/           ← pitchjudge issues database
+    beads_second_voice/         ← second_voice issues database
+
+modules/hatchery/               ← SUBMODULE: connects to hentown's server
+  .beads/config.yaml            ← dolt.auto-start: false, port: 3307
+modules/pigeon/                 ← SUBMODULE: same pattern
+  ...
+```
+
+**Server:** `127.0.0.1:3307` (fixed port, configured in all `.beads/config.yaml` files)
+
+### Top-Level Project Responsibilities
+
+- **hentown** starts and stops the Dolt server: `bd dolt start` / `bd dolt stop`
+- Run from `~/hentown` (or wherever hentown is checked out)
+- The server auto-starts when `bd` commands are run from hentown, if not already running
+
+### Submodule Responsibilities
+
+- **DO NOT** start a Dolt server from a submodule directory
+- **DO** connect to hentown's server at `127.0.0.1:3307`
+- **ABORT** if the server is not running — do not attempt to start it
+
+### Submodule Pre-Flight Check (MANDATORY)
+
+Before any `bd` command in a submodule, verify the shared server is reachable:
+
+```bash
+# Check shared server is running (run from the submodule directory)
+if ! nc -z 127.0.0.1 3307 2>/dev/null; then
+  echo "ERROR: Dolt server not running at 127.0.0.1:3307"
+  echo "Start it from the hentown root: cd ~/hentown && bd dolt start"
+  exit 1
+fi
+```
+
+Or use `bd dolt test` which will fail with a clear error if unreachable.
+
+---
+
+## Architecture Overview (Single Project)
 
 This project uses a **shared Dolt server** model where all agents and tools communicate with a single server instance. This differs from ad-hoc instance creation and ensures:
 
