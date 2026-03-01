@@ -39,8 +39,29 @@ modules/pigeon/                 ← SUBMODULE: same pattern
 ### Submodule Responsibilities
 
 - **DO NOT** start a Dolt server from a submodule directory
-- **DO** connect to hentown's server at `127.0.0.1:3307`
+- **DO** connect to the superproject's server at `127.0.0.1:3307`
 - **ABORT** if the server is not running — do not attempt to start it
+
+### Finding the Superproject Root
+
+From inside any submodule, use git to locate the superproject working tree:
+
+```bash
+SUPERPROJECT=$(git rev-parse --show-superproject-working-tree)
+# Returns the absolute path to the superproject root, e.g. /Users/you/hentown
+# Returns an empty string if not inside a submodule
+```
+
+Use this to start the server without hardcoding paths:
+
+```bash
+SUPERPROJECT=$(git rev-parse --show-superproject-working-tree)
+if [ -z "$SUPERPROJECT" ]; then
+  echo "ERROR: Not inside a submodule — run bd dolt start from the project root."
+  exit 1
+fi
+cd "$SUPERPROJECT" && bd dolt start
+```
 
 ### Submodule Pre-Flight Check (MANDATORY)
 
